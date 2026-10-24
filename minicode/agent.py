@@ -1,4 +1,5 @@
-"""minicode v0.9: the agent loop with plan mode, context, MCP, skills, hooks and subagents."""
+"""minicode v0.10: the agent loop with plan mode, context, MCP, skills, hooks, subagents
+and a verification gate."""
 import json
 import os
 from typing import Callable
@@ -43,6 +44,7 @@ class Agent:
         self.subagents: dict[str, dict] = {}                # definitions, .agents/agents
         self.loaded_rules: set = set()                      # nested AGENTS.md already sent
         self.changed: set[str] = set()                      # files edited this turn
+        self.gate = None                                    # a VerificationGate, if any
         self.messages: list[dict] = [
             {"role": "system", "content": system_prompt(workspace.root)}]
 
@@ -51,6 +53,8 @@ class Agent:
         """Handle one user request: loop until the model stops asking for tools."""
         self.messages.append({"role": "user", "content": self.reminders() + user_text})
         self.changed = set()
+        if self.gate:
+            self.gate.start()                               # fingerprint the tests
         stop_checks = 0
         for _ in range(self.max_steps):
             if len(self.messages) > 2 and self.context_used() > self.context_limit * self.compact_at:
@@ -63,15 +67,13 @@ class Agent:
             self.messages.append(message.model_dump(exclude_none=True))
             if not message.tool_calls:
                 answer = message.content or ""
-                if self.hooks and stop_checks < 3:          # may the agent stop now?
-                    blocked, feedback = self.hooks.run("stop", {
-                        "changed_files": sorted(self.changed), "answer": answer})
-                    if blocked:
+                if stop_checks < 3:                         # may the agent stop now?
+                    feedback = self.stop_feedback(answer)
+                    if feedback:
                         stop_checks += 1
-                        self.on_event("  [stop hook: not finished yet]")
                         self.messages.append({"role": "user", "content": (
-                            "<system-reminder>\nA project hook says the work is not "
-                            f"finished:\n{feedback}\nFix this, then finish again."
+                            "<system-reminder>\nThe work is not finished:\n"
+                            f"{feedback}\nFix this, then finish again."
                             "\n</system-reminder>")})
                         continue
                 return answer
@@ -80,6 +82,21 @@ class Agent:
                 self.messages.append({"role": "tool", "tool_call_id": call.id,
                                       "content": result})
         return "Stopped: reached the step limit. Ask me to continue if needed."
+
+    def stop_feedback(self, answer: str) -> str:
+        """Why the agent may not stop yet ("" = it may). Gate first, then stop hooks."""
+        if self.gate:
+            ok, feedback = self.gate.check(self.changed)
+            if not ok:
+                self.on_event("  [verification gate: not finished yet]")
+                return feedback
+        if self.hooks:
+            blocked, feedback = self.hooks.run("stop", {
+                "changed_files": sorted(self.changed), "answer": answer})
+            if blocked:
+                self.on_event("  [stop hook: not finished yet]")
+                return f"A project hook says: {feedback}"
+        return ""
 
     def reminders(self) -> str:
         """Text the harness adds in front of the user's message."""

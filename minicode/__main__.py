@@ -13,6 +13,7 @@ from minicode.skills import SkillLibrary
 from minicode.subagents import load_definitions
 from minicode.tools import Workspace
 from minicode.tracing import TracingClient
+from minicode.verify import VerificationGate
 
 HELP = """Commands:
   /plan          plan mode: read-only exploration, then a written plan
@@ -39,6 +40,11 @@ def main() -> None:
     parser.add_argument("-p", "--print", dest="prompt",
                         help="headless: run this one request, print the answer and exit")
     parser.add_argument("--json", action="store_true", help="headless output as JSON")
+    parser.add_argument("--verify", metavar="CMD",
+                        help='command that must pass before the agent may finish, '
+                             'e.g. "python -m pytest -q"')
+    parser.add_argument("--allow-test-changes", action="store_true",
+                        help="do not block deleted, skipped or weakened tests")
     parser.add_argument("--context-limit", type=int, default=100_000,
                         help="context window of your model, in tokens")
     args = parser.parse_args()
@@ -62,6 +68,8 @@ def main() -> None:
     agent.add_skills(skills)
     agent.add_hooks(Hooks(workspace.root))                  # .agents/hooks.json
     agent.add_subagents(load_definitions(workspace.root))   # .agents/agents/*.md
+    agent.gate = VerificationGate(workspace.root, args.verify,  # verification gate
+                                  protect_tests=not args.allow_test_changes)
     if args.prompt:
         sys.exit(headless(agent, args.prompt, args.json))
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
@@ -69,7 +77,8 @@ def main() -> None:
     print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}")
     print(f"  skills: {', '.join(skills.skills) or 'none'}")
     print(f"  subagents: {', '.join(agent.subagents) or 'none'}  |  "
-          f"hooks: {'on' if agent.hooks else 'none'}\n")
+          f"hooks: {'on' if agent.hooks else 'none'}  |  "
+          f"verify: {args.verify or 'tests protected'}\n")
     while True:
         try:
             text = input(f"you{' [plan]' if agent.mode == 'plan' else ''}> ").strip()

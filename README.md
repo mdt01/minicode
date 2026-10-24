@@ -16,7 +16,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.8 | 9 | Agent skills with progressive disclosure (`.agents/skills/`, `~/.minicode/skills/`), headless mode (`-p`, `--json`) (`skills.py`) |
 | v0.9 | 10 | Nested and global agent files (`~/.minicode/AGENTS.md`, `app/AGENTS.md`), hooks (`.agents/hooks.json`: `pre_tool`, `post_tool`, `stop`), subagents (`.agents/agents/*.md`, `delegate` tool) (`hooks.py`, `subagents.py`) |
 | v0.9.1 | 11 | Agent-readiness scorecard: 31 checks across 9 pillars and 5 maturity levels (`python -m minicode.readiness PATH --run-tests 5`) (`readiness.py`) |
-| later | 12–18 | Verification, review, security, background mode, loops ... |
+| v0.10 | 12 | Verification gate: blocks deleted, skipped or weakened tests and requires a check command to pass before the agent may finish (`--verify CMD`, `--allow-test-changes`) (`verify.py`) |
+| later | 13–18 | Review, security, background mode, loops ... |
 
 ## Setup
 
