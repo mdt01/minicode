@@ -17,6 +17,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from minicode.security import clean_env
+
 HOOK_FILE = Path(".agents") / "hooks.json"
 EVENTS = ("pre_tool", "post_tool", "stop")
 
@@ -40,7 +42,8 @@ class Hooks:
                 done = subprocess.run(hook["command"], shell=True, cwd=self.root,
                                       input=json.dumps({"event": event, **payload}),
                                       capture_output=True, text=True,
-                                      timeout=hook.get("timeout", 120))
+                                      timeout=hook.get("timeout", 120),
+                                      env=clean_env())      # hooks never see credentials
             except subprocess.TimeoutExpired:
                 notes.append(f"Hook '{hook['command']}' timed out.")
                 continue

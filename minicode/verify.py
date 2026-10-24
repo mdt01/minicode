@@ -71,8 +71,9 @@ def compare(before: dict[str, dict], after: dict[str, dict]) -> list[str]:
 
 class VerificationGate:
     def __init__(self, root: Path, command: str | None = None,
-                 protect_tests: bool = True, timeout: int = 600):
+                 protect_tests: bool = True, timeout: int = 600, sandbox=None):
         self.root = root
+        self.sandbox = sandbox              # run the check in the agent's sandbox (Ch. 15)
         self.command = command
         self.protect_tests = protect_tests
         self.timeout = timeout
@@ -91,8 +92,11 @@ class VerificationGate:
                                + "\nRestore these tests and fix the code instead. If a "
                                "test is really wrong, stop and explain why to the user.")
         if self.command and changed:
-            done = subprocess.run(self.command, shell=True, cwd=self.root, text=True,
-                                  capture_output=True, timeout=self.timeout)
+            if self.sandbox:
+                done = self.sandbox.run(self.command, self.root, timeout=self.timeout)
+            else:
+                done = subprocess.run(self.command, shell=True, cwd=self.root, text=True,
+                                      capture_output=True, timeout=self.timeout)
             if done.returncode != 0:
                 tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-20:])
                 return False, (f"Verification failed: `{self.command}` exited with "

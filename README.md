@@ -19,7 +19,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.10 | 12 | Verification gate: blocks deleted, skipped or weakened tests and requires a check command to pass before the agent may finish (`--verify CMD`, `--allow-test-changes`) (`verify.py`) |
 | v0.11 | 13 | Multi-agent code review: security, correctness and consistency specialists in parallel, a verification pass and an aggregator; Markdown reports for PRs and catch-rate scoring on seeded bugs (`python -m minicode.review --base main`) (`review.py`) |
 | v0.12 | 14 | Security: permission modes (`--mode read-only|ask|accept-edits|auto`), allow/ask/deny rules in `.agents/permissions.json`, a Docker sandbox without network (`--sandbox docker`), credentials scrubbed from shell commands, untrusted-data labels, an audit log (`security.py`) |
-| later | 15–18 | Background mode, loops ... |
+| v0.13 | 15 | Background mode: a task queue, a worker, one Git worktree and branch per task, durable steps with crash recovery, token budgets, cancellation, draft PRs from issues (`python -m minicode.background`) (`background.py`) |
+| later | 16–18 | Loops, teams, the software factory ... |
 
 ## Setup
 
