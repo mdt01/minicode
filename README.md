@@ -11,7 +11,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.3 | 4 | Structured system prompt, AGENTS.md injection, plan mode, compaction, request tracing (`prompts.py`, `compaction.py`, `tracing.py`) |
 | v0.4 | 5 | Context meter and zones, `/clear`, `/handoff` progress notes, `/model` switching, compact instructions from AGENTS.md (`context.py`) |
 | v0.5 | 6 | Project commands: reusable prompts in `.agents/commands/NAME.md` run as `/NAME args` (`commands.py`) |
-| later | 7–18 | MCP, skills, hooks, subagents, background mode ... |
+| v0.6 | 7 | MCP client: tools from servers listed in `.mcp.json` appear as `mcp__server__tool`; `/tools` (`mcp_client.py`) |
+| later | 8–18 | Skills, hooks, subagents, background mode ... |
 
 ## Setup
 
@@ -50,6 +51,7 @@ Then type a request, for example: *"Explain how event registration works."*
 | `/clear` | forget the conversation and start fresh |
 | `/handoff` | write `.minicode/progress.md`, then start fresh from it |
 | `/model NAME` | switch model (strong for planning, lighter for routine work) |
+| `/tools` | list the tools the model can use (built-in and MCP) |
 | `/tokens` | tokens used so far |
 | `/save` | write the conversation to `session.json` |
 | `/exit` | quit |
@@ -57,6 +59,19 @@ Then type a request, for example: *"Explain how event registration works."*
 
 Useful options: `--trace trace.jsonl` records every request and response;
 `--context-limit 32000` tells minicode your model's context window (compaction starts at 70%).
+
+## Connect MCP servers
+
+Put a `.mcp.json` file in the workspace folder; minicode connects at start-up:
+
+```json
+{"mcpServers": {
+  "campushub": {"command": "python", "args": ["mcp_server/server.py"]},
+  "remote":    {"url": "http://127.0.0.1:8765/mcp"}}}
+```
+
+Local servers are started as subprocesses (stdio); `url` entries use streamable HTTP.
+CampusHub's own server is in the campushub repository (`mcp_server/`, Chapter 7).
 
 ## Look inside requests
 

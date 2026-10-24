@@ -6,6 +6,7 @@ from minicode import __version__
 from minicode.agent import NOTES_FILE, Agent, make_client
 from minicode import commands
 from minicode.context import meter, zone
+from minicode.mcp_client import connect_all
 from minicode.tools import Workspace
 from minicode.tracing import TracingClient
 
@@ -17,6 +18,7 @@ HELP = """Commands:
   /clear         forget the conversation and start fresh
   /handoff       write progress notes to disk, then start fresh from them
   /model NAME    switch model (strong for planning, lighter for routine work)
+  /tools         list the tools the model can use (built-in and MCP)
   /tokens        show tokens used so far
   /save          write the conversation to session.json
   /exit          quit
@@ -37,6 +39,9 @@ def main() -> None:
         client = TracingClient(client, args.trace)
     workspace = Workspace(args.workspace, confirm=(lambda _: True) if args.yes else None)
     agent = Agent(client, model, workspace, context_limit=args.context_limit)
+    servers = connect_all(workspace.root)                   # tools from .mcp.json
+    for server in servers:
+        agent.add_tools(server.agent_tools())
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
     print(HELP)
     print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}\n")
@@ -66,6 +71,11 @@ def main() -> None:
         elif command == "/model":
             agent.model = rest or agent.model
             print(f"  model: {agent.model}")
+        elif command == "/tools":
+            names = list(agent.active_tools())
+            print("  built-in: " + ", ".join(n for n in names if not n.startswith("mcp__")))
+            for name in (n for n in names if n.startswith("mcp__")):
+                print(f"  {name}")
         elif command == "/tokens":
             print(f"  tokens so far: {agent.tokens}")
         elif command == "/save":

@@ -1,3 +1,3 @@
 """minicode: a small coding agent built step by step in *The Modern Software Developer*."""
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

@@ -1,4 +1,4 @@
-"""minicode v0.4: the agent loop with plan mode, compaction and context management."""
+"""minicode v0.6: the agent loop with plan mode, context management and MCP tools."""
 import json
 import os
 from typing import Callable
@@ -8,7 +8,7 @@ from openai import OpenAI
 from minicode.context import HANDOFF_PROMPT, NOTE, compact_instructions
 from minicode.compaction import COMPACT_PROMPT, RESUME, estimate_tokens, extract_summary
 from minicode.prompts import APPROVED, PLAN_MODE, project_rules, system_prompt
-from minicode.schema import all_schemas
+from minicode.schema import tool_schema
 from minicode.tools import ToolError, Workspace
 
 PLAN_FILE = ".minicode/plan.md"
@@ -24,6 +24,7 @@ class Agent:
         self.model = model
         self.workspace = workspace
         self.tools = workspace.tools() | {"write_plan": self.write_plan}
+        self.schemas: dict[str, dict] = {}          # ready-made schemas (MCP tools)
         self.max_steps = max_steps
         self.on_event = on_event
         self.context_limit = context_limit
@@ -45,7 +46,7 @@ class Agent:
                 self.compact()                              # automatic compaction
             tools = self.active_tools()
             response = self.client.chat.completions.create(
-                model=self.model, messages=self.messages, tools=all_schemas(tools))
+                model=self.model, messages=self.messages, tools=self.schemas_for(tools))
             self.count(response)
             message = response.choices[0].message
             self.messages.append(message.model_dump(exclude_none=True))
@@ -143,7 +144,17 @@ class Agent:
     # ---- clearing and handing off ----------------------------------------------------
     def request_preview(self) -> dict:
         """The request the next model call would send (for the context meter)."""
-        return {"messages": self.messages, "tools": all_schemas(self.active_tools())}
+        return {"messages": self.messages, "tools": self.schemas_for(self.active_tools())}
+
+    # ---- external tools (MCP) -------------------------------------------------------
+    def add_tools(self, tools: dict[str, tuple[Callable, dict]]) -> None:
+        """Add tools that come with their own schema, e.g. from an MCP server."""
+        for name, (function, schema) in tools.items():
+            self.tools[name] = function
+            self.schemas[name] = schema
+
+    def schemas_for(self, tools: dict[str, Callable]) -> list[dict]:
+        return [self.schemas.get(name) or tool_schema(name, fn) for name, fn in tools.items()]
 
     def clear(self) -> None:
         """Forget the conversation. The system prompt and project rules come back."""
