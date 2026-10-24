@@ -214,7 +214,7 @@ def main() -> None:
     if not diff.strip():
         print("Nothing to review: no changes against", args.base)
         return
-    client, model = make_client()
+    client, model = make_client("review")
     names = [n.strip() for n in args.specialists.split(",") if n.strip() in SPECIALISTS]
     kept, dropped, tokens = review(client, model, root, diff, names,
                                    review_context(root, args.spec), not args.no_verify_pass)

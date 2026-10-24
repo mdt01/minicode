@@ -60,7 +60,7 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=1, help="repeat each task")
     args = parser.parse_args()
 
-    client, model = make_client()
+    client, model = make_client("evaluate")
     workspace = Workspace(args.workspace, confirm=lambda _: False)   # never risky commands
     servers = connect_all(workspace.root, on_event=lambda _: None)
     results = []

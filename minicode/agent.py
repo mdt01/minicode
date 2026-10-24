@@ -302,9 +302,12 @@ class Agent:
         return note
 
 
-def make_client() -> tuple[OpenAI, str]:
+def make_client(task: str = "chat") -> tuple[OpenAI, str]:
+    """An OpenAI-compatible client. The X-Task and X-Feature headers are ignored by
+    providers but let an LLM gateway (Chapter 17) route requests and attribute cost."""
     base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
     key, model = os.getenv("LLM_API_KEY"), os.getenv("LLM_MODEL")
     if not key or not model:
         raise SystemExit("Set LLM_API_KEY and LLM_MODEL first.")
-    return OpenAI(base_url=base_url, api_key=key), model
+    headers = {"X-Task": task, "X-Feature": os.getenv("LLM_FEATURE", "default")}
+    return OpenAI(base_url=base_url, api_key=key, default_headers=headers), model

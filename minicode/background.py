@@ -232,7 +232,7 @@ def default_agent_factory(args):
     from minicode.tools import Workspace
     from minicode.verify import VerificationGate
 
-    client, model = make_client()
+    client, model = make_client("background")
 
     def make(path: Path, task: dict, on_event):
         workspace = Workspace(path, confirm=lambda _: False)   # "ask" means "no"

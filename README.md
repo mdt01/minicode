@@ -21,7 +21,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.12 | 14 | Security: permission modes (`--mode read-only|ask|accept-edits|auto`), allow/ask/deny rules in `.agents/permissions.json`, a Docker sandbox without network (`--sandbox docker`), credentials scrubbed from shell commands, untrusted-data labels, an audit log (`security.py`) |
 | v0.13 | 15 | Background mode: a task queue, a worker, one Git worktree and branch per task, durable steps with crash recovery, token budgets, cancellation, draft PRs from issues (`python -m minicode.background`) (`background.py`) |
 | v0.14 | 16 | Goal-loop runner: TOML loop definitions, a verifiable check, maker and read-only checker agents, iteration caps, budgets, escalation notes and a durable state file (`python -m minicode.loop run`) (`loop.py`) |
-| later | 17–18 | Teams and the software factory ... |
+| v0.15 | 17 | A teaching LLM gateway (virtual keys, routing by task, fallbacks, budgets, cache, JSON log) and a cost report/dashboard; clients send `X-Task` and `X-Feature` headers (`gateway.py`, `cost_report.py`) |
+| later | 18 | The software factory |
 
 ## Setup
 

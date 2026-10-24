@@ -219,7 +219,7 @@ def default_factory(args):
     from minicode.tools import Workspace
     from minicode.verify import VerificationGate
 
-    client, model = make_client()
+    client, model = make_client("loop")
 
     def make(path: Path, role: str, budget_client):
         workspace = Workspace(path, confirm=lambda _: False)
