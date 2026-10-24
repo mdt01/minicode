@@ -1,4 +1,4 @@
-"""minicode v0.7: the agent loop with plan mode, context management, MCP tools and tool search."""
+"""minicode v0.8: the agent loop with plan mode, context management, MCP tools and skills."""
 import json
 import os
 from typing import Callable
@@ -14,7 +14,7 @@ from minicode.toolsearch import ToolCatalog
 
 PLAN_FILE = ".minicode/plan.md"
 NOTES_FILE = ".minicode/progress.md"
-PLAN_TOOLS = {"read_file", "list_files", "write_plan"}   # read-only, plus the plan file
+PLAN_TOOLS = {"read_file", "list_files", "write_plan", "load_skill", "read_skill_file"}   # read-only, plus the plan file
 
 
 class Agent:
@@ -36,6 +36,7 @@ class Agent:
         self.last_input = 0                                 # size of the last request
         self.rules_sent = False
         self.pending_note = ""                             # handoff note for a fresh start
+        self.skills = None                                  # a SkillLibrary, if any
         self.messages: list[dict] = [
             {"role": "system", "content": system_prompt(workspace.root)}]
 
@@ -65,6 +66,8 @@ class Agent:
         text = ""
         if not self.rules_sent:                             # project rules, once
             text += project_rules(self.workspace.root)
+            if self.skills:                                 # level 1: skill names
+                text += self.skills.listing()
             self.rules_sent = True
         if self.pending_note:                               # after /handoff, once
             text += self.pending_note
@@ -135,7 +138,8 @@ class Agent:
         response = self.client.chat.completions.create(model=self.model, messages=request)
         self.count(response)
         summary = extract_summary(response.choices[0].message.content or "")
-        resume = project_rules(self.workspace.root) + RESUME.format(summary=summary)
+        skills = self.skills.listing() if self.skills else ""
+        resume = project_rules(self.workspace.root) + skills + RESUME.format(summary=summary)
         self.messages = [self.messages[0], {"role": "user", "content": resume}]
         self.last_input = 0
         after = estimate_tokens(self.messages)
@@ -164,6 +168,13 @@ class Agent:
         for name, (function, schema) in tools.items():
             self.tools[name] = function
             self.schemas[name] = schema
+
+    def add_skills(self, library) -> None:
+        """Offer skills: names in the first message, full text through load_skill."""
+        if library.skills:
+            self.skills = library
+            self.tools["load_skill"] = library.load_skill
+            self.tools["read_skill_file"] = library.read_skill_file
 
     def schemas_for(self, tools: dict[str, Callable]) -> list[dict]:
         return [self.schemas.get(name) or tool_schema(name, fn) for name, fn in tools.items()]

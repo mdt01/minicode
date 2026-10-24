@@ -13,7 +13,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.5 | 6 | Project commands: reusable prompts in `.agents/commands/NAME.md` run as `/NAME args` (`commands.py`) |
 | v0.6 | 7 | MCP client: tools from servers listed in `.mcp.json` appear as `mcp__server__tool`; `/tools` (`mcp_client.py`) |
 | v0.7 | 8 | Tool search mode (`--tool-search`: `search_tools` + `call_tool`) and a tool-set evaluation harness (`python -m minicode.evaluate`) |
-| later | 9–18 | Skills, hooks, subagents, background mode ... |
+| v0.8 | 9 | Agent skills with progressive disclosure (`.agents/skills/`, `~/.minicode/skills/`), headless mode (`-p`, `--json`) (`skills.py`) |
+| later | 10–18 | Hooks, subagents, background mode ... |
 
 ## Setup
 
@@ -56,7 +57,7 @@ Then type a request, for example: *"Explain how event registration works."*
 | `/tokens` | tokens used so far |
 | `/save` | write the conversation to `session.json` |
 | `/exit` | quit |
-| `/NAME [args]` | run a project command from `.agents/commands/NAME.md` |
+| `/NAME [args]` | run a project command (`.agents/commands/NAME.md`) or a skill (`.agents/skills/NAME/`) |
 
 Useful options: `--trace trace.jsonl` records every request and response;
 `--context-limit 32000` tells minicode your model's context window (compaction starts at 70%).
@@ -73,6 +74,23 @@ Put a `.mcp.json` file in the workspace folder; minicode connects at start-up:
 
 Local servers are started as subprocesses (stdio); `url` entries use streamable HTTP.
 CampusHub's own server is in the campushub repository (`mcp_server/`, Chapter 7).
+
+## Skills
+
+Skills are folders with a `SKILL.md` (front matter `name` and `description`, then instructions)
+plus optional `scripts/` and `references/`. minicode reads them from `.agents/skills/` in the
+workspace and from `~/.minicode/skills/`. The model sees only names and descriptions until it
+calls `load_skill(name)`; bundled files are read with `read_skill_file`. Add
+`disable-model-invocation: true` to make a skill user-invoked only (`/NAME`).
+
+## Headless mode
+
+```bash
+python -m minicode --workspace ../campushub -p "List the API endpoints" --json
+```
+
+Runs one request and exits (0 = answered, 1 = error, 2 = step limit). Risky shell commands are
+declined automatically unless you add `--yes`.
 
 ## Many tools? Search for them
 

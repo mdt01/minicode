@@ -1,12 +1,14 @@
 """Command-line interface:  python -m minicode --workspace ../campushub"""
 import argparse
 import json
+import sys
 
 from minicode import __version__
 from minicode.agent import NOTES_FILE, Agent, make_client
 from minicode import commands
 from minicode.context import meter, zone
 from minicode.mcp_client import connect_all
+from minicode.skills import SkillLibrary
 from minicode.tools import Workspace
 from minicode.tracing import TracingClient
 
@@ -22,7 +24,7 @@ HELP = """Commands:
   /tokens        show tokens used so far
   /save          write the conversation to session.json
   /exit          quit
-  /NAME [args]   run a project command from .agents/commands/NAME.md"""
+  /NAME [args]   run a project command (.agents/commands) or skill (.agents/skills)"""
 
 
 def main() -> None:
@@ -32,6 +34,9 @@ def main() -> None:
     parser.add_argument("--trace", help="append every request and response to this .jsonl file")
     parser.add_argument("--tool-search", action="store_true",
                         help="hide MCP tools behind search_tools/call_tool (saves context)")
+    parser.add_argument("-p", "--print", dest="prompt",
+                        help="headless: run this one request, print the answer and exit")
+    parser.add_argument("--json", action="store_true", help="headless output as JSON")
     parser.add_argument("--context-limit", type=int, default=100_000,
                         help="context window of your model, in tokens")
     args = parser.parse_args()
@@ -39,14 +44,26 @@ def main() -> None:
     client, model = make_client()
     if args.trace:
         client = TracingClient(client, args.trace)
-    workspace = Workspace(args.workspace, confirm=(lambda _: True) if args.yes else None)
+    if args.yes:
+        confirm = lambda _: True                                # noqa: E731
+    elif args.prompt:
+        confirm = lambda _: False                               # headless: never ask  # noqa: E731
+    else:
+        confirm = None
+    workspace = Workspace(args.workspace, confirm=confirm)
     agent = Agent(client, model, workspace, context_limit=args.context_limit)
-    servers = connect_all(workspace.root)                   # tools from .mcp.json
+    quiet = (lambda _: None) if args.prompt else print
+    servers = connect_all(workspace.root, on_event=quiet)   # tools from .mcp.json
     for server in servers:
         agent.add_tools(server.agent_tools(), deferred=args.tool_search)
+    skills = SkillLibrary(workspace.root)                   # skills from .agents/skills
+    agent.add_skills(skills)
+    if args.prompt:
+        sys.exit(headless(agent, args.prompt, args.json))
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
     print(HELP)
-    print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}\n")
+    print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}")
+    print(f"  skills: {', '.join(skills.skills) or 'none'}\n")
     while True:
         try:
             text = input(f"you{' [plan]' if agent.mode == 'plan' else ''}> ").strip()
@@ -88,7 +105,8 @@ def main() -> None:
             print(HELP)
         elif text:
             if command.startswith("/"):                     # a project command?
-                prompt = commands.expand(workspace.root, command[1:], rest)
+                prompt = (commands.expand(workspace.root, command[1:], rest)
+                          or skills.invoke(command[1:], rest))      # or a skill
                 if prompt is None:
                     print(f"  unknown command {command}; type /help")
                     continue
@@ -98,6 +116,24 @@ def main() -> None:
             if used > agent.context_limit / 2:              # warn when leaving the smart zone
                 print(f"  [context {100 * used / agent.context_limit:.0f}% - "
                       f"{zone(used, agent.context_limit)}]")
+
+
+def headless(agent: Agent, prompt: str, as_json: bool) -> int:
+    """Run one request without a person at the keyboard. Exit code 0 = answered."""
+    calls = []
+    agent.on_event = calls.append                           # record tool calls quietly
+    try:
+        answer = agent.run_turn(prompt)
+    except Exception as exc:                                # e.g. the API is unreachable
+        print(json.dumps({"error": str(exc)}) if as_json else f"error: {exc}",
+              file=sys.stderr)
+        return 1
+    if as_json:
+        print(json.dumps({"answer": answer, "tool_calls": [c.strip() for c in calls],
+                          "tokens": agent.tokens}, indent=2))
+    else:
+        print(answer)
+    return 2 if answer.startswith("Stopped:") else 0
 
 
 def show_context(agent: Agent) -> None:
