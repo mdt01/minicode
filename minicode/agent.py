@@ -1,4 +1,4 @@
-"""minicode v0.6: the agent loop with plan mode, context management and MCP tools."""
+"""minicode v0.7: the agent loop with plan mode, context management, MCP tools and tool search."""
 import json
 import os
 from typing import Callable
@@ -10,6 +10,7 @@ from minicode.compaction import COMPACT_PROMPT, RESUME, estimate_tokens, extract
 from minicode.prompts import APPROVED, PLAN_MODE, project_rules, system_prompt
 from minicode.schema import tool_schema
 from minicode.tools import ToolError, Workspace
+from minicode.toolsearch import ToolCatalog
 
 PLAN_FILE = ".minicode/plan.md"
 NOTES_FILE = ".minicode/progress.md"
@@ -25,6 +26,7 @@ class Agent:
         self.workspace = workspace
         self.tools = workspace.tools() | {"write_plan": self.write_plan}
         self.schemas: dict[str, dict] = {}          # ready-made schemas (MCP tools)
+        self.catalog: ToolCatalog | None = None     # deferred tools (tool search mode)
         self.max_steps = max_steps
         self.on_event = on_event
         self.context_limit = context_limit
@@ -147,8 +149,18 @@ class Agent:
         return {"messages": self.messages, "tools": self.schemas_for(self.active_tools())}
 
     # ---- external tools (MCP) -------------------------------------------------------
-    def add_tools(self, tools: dict[str, tuple[Callable, dict]]) -> None:
-        """Add tools that come with their own schema, e.g. from an MCP server."""
+    def add_tools(self, tools: dict[str, tuple[Callable, dict]], deferred: bool = False) -> None:
+        """Add tools that come with their own schema, e.g. from an MCP server.
+
+        deferred=True puts them in a searchable catalog instead of the tool list:
+        the model then sees only search_tools and call_tool (tool search mode)."""
+        if deferred:
+            if self.catalog is None:
+                self.catalog = ToolCatalog()
+                self.tools["search_tools"] = self.catalog.search_tools
+                self.tools["call_tool"] = self.catalog.call_tool
+            self.catalog.add(tools)
+            return
         for name, (function, schema) in tools.items():
             self.tools[name] = function
             self.schemas[name] = schema

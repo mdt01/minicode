@@ -12,7 +12,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.4 | 5 | Context meter and zones, `/clear`, `/handoff` progress notes, `/model` switching, compact instructions from AGENTS.md (`context.py`) |
 | v0.5 | 6 | Project commands: reusable prompts in `.agents/commands/NAME.md` run as `/NAME args` (`commands.py`) |
 | v0.6 | 7 | MCP client: tools from servers listed in `.mcp.json` appear as `mcp__server__tool`; `/tools` (`mcp_client.py`) |
-| later | 8–18 | Skills, hooks, subagents, background mode ... |
+| v0.7 | 8 | Tool search mode (`--tool-search`: `search_tools` + `call_tool`) and a tool-set evaluation harness (`python -m minicode.evaluate`) |
+| later | 9–18 | Skills, hooks, subagents, background mode ... |
 
 ## Setup
 
@@ -72,6 +73,20 @@ Put a `.mcp.json` file in the workspace folder; minicode connects at start-up:
 
 Local servers are started as subprocesses (stdio); `url` entries use streamable HTTP.
 CampusHub's own server is in the campushub repository (`mcp_server/`, Chapter 7).
+
+## Many tools? Search for them
+
+`python -m minicode --tool-search` hides MCP tools behind two meta-tools, `search_tools` and
+`call_tool`, so their definitions are loaded only when needed (Chapter 8).
+
+## Evaluate a tool set
+
+```bash
+python -m minicode.evaluate tasks.json --workspace ../campushub --runs 3 [--tool-search]
+```
+
+`tasks.json` lists prompts with the tools and facts you expect; the report shows success,
+tool calls, errors and input tokens per task.
 
 ## Look inside requests
 

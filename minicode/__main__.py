@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("--workspace", default=".", help="folder the agent may work in")
     parser.add_argument("--yes", action="store_true", help="approve risky commands automatically")
     parser.add_argument("--trace", help="append every request and response to this .jsonl file")
+    parser.add_argument("--tool-search", action="store_true",
+                        help="hide MCP tools behind search_tools/call_tool (saves context)")
     parser.add_argument("--context-limit", type=int, default=100_000,
                         help="context window of your model, in tokens")
     args = parser.parse_args()
@@ -41,7 +43,7 @@ def main() -> None:
     agent = Agent(client, model, workspace, context_limit=args.context_limit)
     servers = connect_all(workspace.root)                   # tools from .mcp.json
     for server in servers:
-        agent.add_tools(server.agent_tools())
+        agent.add_tools(server.agent_tools(), deferred=args.tool_search)
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
     print(HELP)
     print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}\n")
