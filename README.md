@@ -14,7 +14,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.6 | 7 | MCP client: tools from servers listed in `.mcp.json` appear as `mcp__server__tool`; `/tools` (`mcp_client.py`) |
 | v0.7 | 8 | Tool search mode (`--tool-search`: `search_tools` + `call_tool`) and a tool-set evaluation harness (`python -m minicode.evaluate`) |
 | v0.8 | 9 | Agent skills with progressive disclosure (`.agents/skills/`, `~/.minicode/skills/`), headless mode (`-p`, `--json`) (`skills.py`) |
-| later | 10–18 | Hooks, subagents, background mode ... |
+| v0.9 | 10 | Nested and global agent files (`~/.minicode/AGENTS.md`, `app/AGENTS.md`), hooks (`.agents/hooks.json`: `pre_tool`, `post_tool`, `stop`), subagents (`.agents/agents/*.md`, `delegate` tool) (`hooks.py`, `subagents.py`) |
+| later | 11–18 | Background mode, loops ... |
 
 ## Setup
 

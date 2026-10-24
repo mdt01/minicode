@@ -51,11 +51,42 @@ run commands. Implement the plan step by step and verify it with the tests.
 """
 
 RULE_FILES = ("AGENTS.md", "CLAUDE.md")
+GLOBAL_RULES = Path.home() / ".minicode" / "AGENTS.md"       # your personal rules
 
 
 def system_prompt(root: Path) -> str:
     today = datetime.date.today().isoformat()
     return SYSTEM_PROMPT.format(root=root, os=platform.system(), date=today)
+
+
+def global_rules() -> str:
+    """Your personal AGENTS.md, loaded before the project's own file."""
+    if GLOBAL_RULES.is_file():
+        text = GLOBAL_RULES.read_text(encoding="utf-8").strip()
+        return f"<system-reminder>\nYour personal rules (~/.minicode/AGENTS.md):\n\n{text}\n</system-reminder>\n"
+    return ""
+
+
+def nested_rules(root: Path, path: str, loaded: set) -> str:
+    """Rules files between the workspace root and `path`, not yet loaded (nearest last)."""
+    target = (root / path).resolve()
+    folder = target if target.is_dir() else target.parent
+    chain = []
+    while folder != root and root in folder.parents:
+        chain.append(folder)
+        folder = folder.parent
+    text = ""
+    for folder in reversed(chain):                       # outermost first, nearest last
+        for name in RULE_FILES:
+            file = folder / name
+            if file.is_file() and file not in loaded:
+                loaded.add(file)
+                rel = file.relative_to(root).as_posix()
+                text += (f"\n<system-reminder>\nRules for {folder.relative_to(root).as_posix()}/ "
+                         f"from {rel}. Follow them when working here.\n\n"
+                         f"{file.read_text(encoding='utf-8').strip()}\n</system-reminder>")
+                break
+    return text
 
 
 def project_rules(root: Path) -> str:

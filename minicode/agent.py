@@ -1,4 +1,4 @@
-"""minicode v0.8: the agent loop with plan mode, context management, MCP tools and skills."""
+"""minicode v0.9: the agent loop with plan mode, context, MCP, skills, hooks and subagents."""
 import json
 import os
 from typing import Callable
@@ -7,7 +7,9 @@ from openai import OpenAI
 
 from minicode.context import HANDOFF_PROMPT, NOTE, compact_instructions
 from minicode.compaction import COMPACT_PROMPT, RESUME, estimate_tokens, extract_summary
-from minicode.prompts import APPROVED, PLAN_MODE, project_rules, system_prompt
+from minicode.prompts import (APPROVED, PLAN_MODE, global_rules, nested_rules,
+                              project_rules, system_prompt)
+from minicode.subagents import delegate_schema
 from minicode.schema import tool_schema
 from minicode.tools import ToolError, Workspace
 from minicode.toolsearch import ToolCatalog
@@ -37,6 +39,10 @@ class Agent:
         self.rules_sent = False
         self.pending_note = ""                             # handoff note for a fresh start
         self.skills = None                                  # a SkillLibrary, if any
+        self.hooks = None                                   # Hooks from .agents/hooks.json
+        self.subagents: dict[str, dict] = {}                # definitions, .agents/agents
+        self.loaded_rules: set = set()                      # nested AGENTS.md already sent
+        self.changed: set[str] = set()                      # files edited this turn
         self.messages: list[dict] = [
             {"role": "system", "content": system_prompt(workspace.root)}]
 
@@ -44,6 +50,8 @@ class Agent:
     def run_turn(self, user_text: str) -> str:
         """Handle one user request: loop until the model stops asking for tools."""
         self.messages.append({"role": "user", "content": self.reminders() + user_text})
+        self.changed = set()
+        stop_checks = 0
         for _ in range(self.max_steps):
             if len(self.messages) > 2 and self.context_used() > self.context_limit * self.compact_at:
                 self.compact()                              # automatic compaction
@@ -54,7 +62,19 @@ class Agent:
             message = response.choices[0].message
             self.messages.append(message.model_dump(exclude_none=True))
             if not message.tool_calls:
-                return message.content or ""
+                answer = message.content or ""
+                if self.hooks and stop_checks < 3:          # may the agent stop now?
+                    blocked, feedback = self.hooks.run("stop", {
+                        "changed_files": sorted(self.changed), "answer": answer})
+                    if blocked:
+                        stop_checks += 1
+                        self.on_event("  [stop hook: not finished yet]")
+                        self.messages.append({"role": "user", "content": (
+                            "<system-reminder>\nA project hook says the work is not "
+                            f"finished:\n{feedback}\nFix this, then finish again."
+                            "\n</system-reminder>")})
+                        continue
+                return answer
             for call in message.tool_calls:
                 result = self.execute(call.function.name, call.function.arguments, tools)
                 self.messages.append({"role": "tool", "tool_call_id": call.id,
@@ -64,8 +84,8 @@ class Agent:
     def reminders(self) -> str:
         """Text the harness adds in front of the user's message."""
         text = ""
-        if not self.rules_sent:                             # project rules, once
-            text += project_rules(self.workspace.root)
+        if not self.rules_sent:                             # rules, once
+            text += global_rules() + project_rules(self.workspace.root)
             if self.skills:                                 # level 1: skill names
                 text += self.skills.listing()
             self.rules_sent = True
@@ -90,7 +110,21 @@ class Agent:
             return f"Error: tool '{name}' is not available now. Available: {', '.join(tools)}."
         try:
             args = json.loads(arguments or "{}")
-            return str(tool(**args))
+            if self.hooks:                                  # pre-tool hooks may block
+                blocked, feedback = self.hooks.run("pre_tool", {"tool": name, "arguments": args})
+                if blocked:
+                    return f"Error: blocked by a project hook: {feedback}"
+            result = str(tool(**args))
+            if name == "edit_file":
+                self.changed.add(args.get("path", ""))
+            if self.hooks:                                  # post-tool hooks give feedback
+                _, feedback = self.hooks.run("post_tool", {"tool": name, "arguments": args,
+                                                           "result": result[:2000]})
+                if feedback:
+                    result += f"\n<system-reminder>\nHook feedback:\n{feedback}\n</system-reminder>"
+            if name in ("read_file", "list_files", "edit_file") and "path" in args:
+                result += nested_rules(self.workspace.root, args["path"], self.loaded_rules)
+            return result
         except json.JSONDecodeError:
             return "Error: arguments were not valid JSON."
         except TypeError as exc:
@@ -141,6 +175,7 @@ class Agent:
         skills = self.skills.listing() if self.skills else ""
         resume = project_rules(self.workspace.root) + skills + RESUME.format(summary=summary)
         self.messages = [self.messages[0], {"role": "user", "content": resume}]
+        self.loaded_rules = set()                           # nested rules load again
         self.last_input = 0
         after = estimate_tokens(self.messages)
         self.on_event(f"  [compacted: about {before:,} -> {after:,} tokens]")
@@ -176,12 +211,45 @@ class Agent:
             self.tools["load_skill"] = library.load_skill
             self.tools["read_skill_file"] = library.read_skill_file
 
+    # ---- hooks and subagents --------------------------------------------------------
+    def add_hooks(self, hooks) -> None:
+        if hooks:
+            self.hooks = hooks
+
+    def add_subagents(self, definitions: dict[str, dict]) -> None:
+        """Offer a delegate tool that runs a subagent in a fresh context."""
+        if definitions:
+            self.subagents = definitions
+            self.tools["delegate"] = self.delegate
+            self.schemas["delegate"] = delegate_schema(definitions)
+
+    def delegate(self, agent: str, task: str) -> str:
+        definition = self.subagents.get(agent)
+        if definition is None:
+            raise ToolError(f"No subagent '{agent}'. Available: {', '.join(self.subagents)}.")
+        child = Agent(self.client, self.model, self.workspace, max_steps=self.max_steps,
+                      on_event=lambda e: self.on_event(f"    [{agent}] {e.strip()}"),
+                      context_limit=self.context_limit)
+        child.messages[0]["content"] += f"\n# Your role: {agent}\n{definition['body']}\n"
+        if self.skills:
+            child.add_skills(self.skills)
+        child.hooks = self.hooks                            # same rules apply to helpers
+        allowed = definition["tools"]
+        if allowed:                                         # restrict the helper's tools
+            child.tools = {n: t for n, t in child.tools.items() if n in allowed}
+        answer = child.run_turn(task)                       # a fresh context
+        for key in self.tokens:
+            self.tokens[key] += child.tokens[key]
+        self.changed |= child.changed
+        return f"[{agent} finished]\n{answer}"
+
     def schemas_for(self, tools: dict[str, Callable]) -> list[dict]:
         return [self.schemas.get(name) or tool_schema(name, fn) for name, fn in tools.items()]
 
     def clear(self) -> None:
         """Forget the conversation. The system prompt and project rules come back."""
         self.messages = self.messages[:1]
+        self.loaded_rules = set()
         self.rules_sent = False
         self.last_input = 0
 

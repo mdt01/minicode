@@ -8,7 +8,9 @@ from minicode.agent import NOTES_FILE, Agent, make_client
 from minicode import commands
 from minicode.context import meter, zone
 from minicode.mcp_client import connect_all
+from minicode.hooks import Hooks
 from minicode.skills import SkillLibrary
+from minicode.subagents import load_definitions
 from minicode.tools import Workspace
 from minicode.tracing import TracingClient
 
@@ -58,12 +60,16 @@ def main() -> None:
         agent.add_tools(server.agent_tools(), deferred=args.tool_search)
     skills = SkillLibrary(workspace.root)                   # skills from .agents/skills
     agent.add_skills(skills)
+    agent.add_hooks(Hooks(workspace.root))                  # .agents/hooks.json
+    agent.add_subagents(load_definitions(workspace.root))   # .agents/agents/*.md
     if args.prompt:
         sys.exit(headless(agent, args.prompt, args.json))
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
     print(HELP)
     print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}")
-    print(f"  skills: {', '.join(skills.skills) or 'none'}\n")
+    print(f"  skills: {', '.join(skills.skills) or 'none'}")
+    print(f"  subagents: {', '.join(agent.subagents) or 'none'}  |  "
+          f"hooks: {'on' if agent.hooks else 'none'}\n")
     while True:
         try:
             text = input(f"you{' [plan]' if agent.mode == 'plan' else ''}> ").strip()
