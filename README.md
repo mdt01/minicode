@@ -10,7 +10,8 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.2 | 3 | Native tool calling, tool schemas from Python functions, a guarded shell tool (`minicode/agent.py`) |
 | v0.3 | 4 | Structured system prompt, AGENTS.md injection, plan mode, compaction, request tracing (`prompts.py`, `compaction.py`, `tracing.py`) |
 | v0.4 | 5 | Context meter and zones, `/clear`, `/handoff` progress notes, `/model` switching, compact instructions from AGENTS.md (`context.py`) |
-| later | 6–18 | MCP, skills, hooks, subagents, background mode ... |
+| v0.5 | 6 | Project commands: reusable prompts in `.agents/commands/NAME.md` run as `/NAME args` (`commands.py`) |
+| later | 7–18 | MCP, skills, hooks, subagents, background mode ... |
 
 ## Setup
 
@@ -52,6 +53,7 @@ Then type a request, for example: *"Explain how event registration works."*
 | `/tokens` | tokens used so far |
 | `/save` | write the conversation to `session.json` |
 | `/exit` | quit |
+| `/NAME [args]` | run a project command from `.agents/commands/NAME.md` |
 
 Useful options: `--trace trace.jsonl` records every request and response;
 `--context-limit 32000` tells minicode your model's context window (compaction starts at 70%).

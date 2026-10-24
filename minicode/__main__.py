@@ -4,6 +4,7 @@ import json
 
 from minicode import __version__
 from minicode.agent import NOTES_FILE, Agent, make_client
+from minicode import commands
 from minicode.context import meter, zone
 from minicode.tools import Workspace
 from minicode.tracing import TracingClient
@@ -18,7 +19,8 @@ HELP = """Commands:
   /model NAME    switch model (strong for planning, lighter for routine work)
   /tokens        show tokens used so far
   /save          write the conversation to session.json
-  /exit          quit"""
+  /exit          quit
+  /NAME [args]   run a project command from .agents/commands/NAME.md"""
 
 
 def main() -> None:
@@ -36,7 +38,8 @@ def main() -> None:
     workspace = Workspace(args.workspace, confirm=(lambda _: True) if args.yes else None)
     agent = Agent(client, model, workspace, context_limit=args.context_limit)
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
-    print(HELP + "\n")
+    print(HELP)
+    print(f"  project commands: {', '.join(commands.available(workspace.root)) or 'none'}\n")
     while True:
         try:
             text = input(f"you{' [plan]' if agent.mode == 'plan' else ''}> ").strip()
@@ -72,6 +75,12 @@ def main() -> None:
         elif command == "/help":
             print(HELP)
         elif text:
+            if command.startswith("/"):                     # a project command?
+                prompt = commands.expand(workspace.root, command[1:], rest)
+                if prompt is None:
+                    print(f"  unknown command {command}; type /help")
+                    continue
+                text = prompt
             print(f"\nminicode> {agent.run_turn(text)}\n")
             used = agent.context_used()
             if used > agent.context_limit / 2:              # warn when leaving the smart zone
