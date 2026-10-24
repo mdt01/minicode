@@ -284,6 +284,8 @@ def main() -> None:
     show.add_argument("id")
     cancel = sub.add_parser("cancel")
     cancel.add_argument("id")
+    for p in sub.choices.values():                    # --repo also works after the command
+        p.add_argument("--repo", default=argparse.SUPPRESS, help="the project folder")
     args = parser.parse_args()
 
     store = TaskStore(Path(args.repo))

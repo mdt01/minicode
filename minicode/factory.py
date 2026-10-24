@@ -81,6 +81,7 @@ class Spec:
     app: str = ""                          # e.g. "app.main:app" for the preview
     health: str = "/health"
     env: dict = field(default_factory=dict)
+    setup: list[str] = field(default_factory=list)  # e.g. seed the preview database
     smoke: list[dict] = field(default_factory=list)
 
     @classmethod
@@ -236,6 +237,14 @@ class Factory:
         port, tmp = free_port(), tempfile.mkdtemp(prefix="factory-")
         env = clean_env() | {k: v.format(tmp=tmp) for k, v in self.spec.env.items()}
         log_file = Path(tmp) / "server.log"
+        for command in self.spec.setup:                  # e.g. "{python} -m scripts.seed"
+            done = subprocess.run(command.format(python=self.python, tmp=tmp), shell=True,
+                                  cwd=self.worktree, env=env, text=True, capture_output=True,
+                                  timeout=300)
+            if done.returncode != 0:
+                s["results"]["preview setup"] = f"FAIL: {command}"
+                s["status"], s["error"] = "failed", "preview setup failed"
+                return "preview"
         with log_file.open("w") as log:
             server = subprocess.Popen([self.python, "-m", "uvicorn", self.spec.app,
                                        "--port", str(port)], cwd=self.worktree, env=env,
@@ -322,7 +331,8 @@ def run_smoke(base: str, checks: list[dict], results: dict) -> bool:
     for number, check in enumerate(checks, 1):
         url = base + fill(check["path"], saved)
         response = httpx.request(check.get("method", "GET"), url,
-                                 json=fill(check.get("json"), saved), timeout=10)
+                                 json=fill(check.get("json"), saved),
+                                 headers=fill(check.get("headers"), saved), timeout=10)
         ok = response.status_code == check.get("expect_status", 200)
         if ok and check.get("expect_contains"):
             ok = check["expect_contains"] in response.text
@@ -388,6 +398,8 @@ def main() -> None:
                          ("--sandbox", {"default": "none"}),
                          ("--sandbox-image", {"default": "python:3.12-slim"})):
             p.add_argument(flag, **kw)
+    for p in sub.choices.values():                    # --repo also works after the command
+        p.add_argument("--repo", default=argparse.SUPPRESS, help="the project folder")
     args = parser.parse_args()
     repo = Path(args.repo).resolve()
 

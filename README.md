@@ -23,6 +23,7 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.14 | 16 | Goal-loop runner: TOML loop definitions, a verifiable check, maker and read-only checker agents, iteration caps, budgets, escalation notes and a durable state file (`python -m minicode.loop run`) (`loop.py`) |
 | v0.15 | 17 | A teaching LLM gateway (virtual keys, routing by task, fallbacks, budgets, cache, JSON log) and a cost report/dashboard; clients send `X-Task` and `X-Feature` headers (`gateway.py`, `cost_report.py`) |
 | v1.0 | 18 | A mini software factory: executable TOML specs, plan → implement → verify (tests, scan of changed files, checker) → publish → preview deploy with HTTP smoke checks and a log watcher; human checkpoints (`python -m minicode.factory`) (`factory.py`) |
+| v1.0.1 | Capstone | Factory specs can run `setup` commands before the preview (e.g. seed a database) and send `headers` in smoke checks (e.g. a login token from an earlier step); `--repo` works before or after the sub-command in `background`, `loop` and `factory` |
 
 ## Setup
 

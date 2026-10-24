@@ -251,6 +251,8 @@ def main() -> None:
     status.add_argument("name")
     reset = sub.add_parser("reset", help="forget the loop's state (after a human took over)")
     reset.add_argument("name")
+    for p in sub.choices.values():                    # --repo also works after the command
+        p.add_argument("--repo", default=argparse.SUPPRESS, help="the project folder")
     args = parser.parse_args()
     repo = Path(args.repo).resolve()
 

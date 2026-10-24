@@ -69,8 +69,8 @@ def test_smoke_templates_and_checks(monkeypatch):
     assert fill("{now+30m}", {})[:2] == "20"
     calls = []
 
-    def fake_request(method, url, json=None, timeout=10):
-        calls.append((method, url, json))
+    def fake_request(method, url, json=None, headers=None, timeout=10):
+        calls.append((method, url, json, headers))
         if url.endswith("/events"):
             return httpx.Response(201, json={"id": 42})
         return httpx.Response(400, json={"detail": "Registration closed: ..."})
@@ -80,6 +80,16 @@ def test_smoke_templates_and_checks(monkeypatch):
         {"name": "ev", "method": "POST", "path": "/events", "json": {"t": "a"},
          "expect_status": 201},
         {"method": "POST", "path": "/events/{ev.id}/register", "expect_status": 400,
+         "headers": {"Authorization": "Bearer {ev.id}"},
          "expect_contains": "Registration closed"}], results)
     assert ok and calls[1][1] == "http://x/events/42/register"
+    assert calls[1][3] == {"Authorization": "Bearer 42"} and calls[0][3] is None
     assert list(results.values()) == ["pass", "pass"]
+
+
+def test_repo_option_works_before_and_after_the_command(tmp_path):
+    import subprocess
+    for argv in (["--repo", str(tmp_path), "status", "nope"], ["status", "nope", "--repo", str(tmp_path)]):
+        done = subprocess.run([sys.executable, "-m", "minicode.factory", *argv],
+                              capture_output=True, text=True)
+        assert done.returncode == 0 and "unknown run" in done.stdout
