@@ -73,3 +73,11 @@ def test_clean_env_and_sandbox(monkeypatch, tmp_path):
     out = Sandbox().run("echo hello", tmp_path)
     assert out.stdout.strip() == "hello"
     assert "untrusted-data" in wrap_untrusted("mcp__web__fetch", "some page text")
+
+
+def test_git_config_group_is_dropped_together(monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "http.extraheader")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "Authorization: Bearer x")
+    env = clean_env()
+    assert not [k for k in env if k.startswith("GIT_CONFIG_")]

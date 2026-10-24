@@ -92,7 +92,10 @@ class Policy:
 # ---- running shell commands with less power ---------------------------------------------
 def clean_env() -> dict[str, str]:
     """The current environment minus anything that looks like a credential."""
-    return {k: v for k, v in os.environ.items() if not SECRET_NAME.search(k)}
+    # GIT_CONFIG_COUNT/KEY_n/VALUE_n travel together (values may carry credentials):
+    # dropping only some of them would break git, so drop the whole group.
+    return {k: v for k, v in os.environ.items()
+            if not SECRET_NAME.search(k) and not k.startswith("GIT_CONFIG_")}
 
 
 class Sandbox:
