@@ -14,6 +14,7 @@ from minicode.subagents import load_definitions
 from minicode.tools import Workspace
 from minicode.tracing import TracingClient
 from minicode.verify import VerificationGate
+from minicode.security import MODES, Policy, Sandbox
 
 HELP = """Commands:
   /plan          plan mode: read-only exploration, then a written plan
@@ -45,6 +46,11 @@ def main() -> None:
                              'e.g. "python -m pytest -q"')
     parser.add_argument("--allow-test-changes", action="store_true",
                         help="do not block deleted, skipped or weakened tests")
+    parser.add_argument("--mode", choices=MODES, default="ask",
+                        help="permission mode (rules come from .agents/permissions.json)")
+    parser.add_argument("--sandbox", choices=["none", "docker"], default="none",
+                        help="run shell commands in a Docker container without network")
+    parser.add_argument("--sandbox-image", default="python:3.12-slim")
     parser.add_argument("--context-limit", type=int, default=100_000,
                         help="context window of your model, in tokens")
     args = parser.parse_args()
@@ -59,6 +65,7 @@ def main() -> None:
     else:
         confirm = None
     workspace = Workspace(args.workspace, confirm=confirm)
+    workspace.sandbox = Sandbox(args.sandbox, args.sandbox_image)
     agent = Agent(client, model, workspace, context_limit=args.context_limit)
     quiet = (lambda _: None) if args.prompt else print
     servers = connect_all(workspace.root, on_event=quiet)   # tools from .mcp.json
@@ -68,6 +75,7 @@ def main() -> None:
     agent.add_skills(skills)
     agent.add_hooks(Hooks(workspace.root))                  # .agents/hooks.json
     agent.add_subagents(load_definitions(workspace.root))   # .agents/agents/*.md
+    agent.policy = Policy(workspace.root, args.mode)        # permissions + audit log
     agent.gate = VerificationGate(workspace.root, args.verify,  # verification gate
                                   protect_tests=not args.allow_test_changes)
     if args.prompt:
@@ -78,7 +86,8 @@ def main() -> None:
     print(f"  skills: {', '.join(skills.skills) or 'none'}")
     print(f"  subagents: {', '.join(agent.subagents) or 'none'}  |  "
           f"hooks: {'on' if agent.hooks else 'none'}  |  "
-          f"verify: {args.verify or 'tests protected'}\n")
+          f"verify: {args.verify or 'tests protected'}")
+    print(f"  permissions: {args.mode} mode  |  shell: {workspace.sandbox.describe()}\n")
     while True:
         try:
             text = input(f"you{' [plan]' if agent.mode == 'plan' else ''}> ").strip()

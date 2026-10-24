@@ -1,5 +1,5 @@
-"""minicode v0.10: the agent loop with plan mode, context, MCP, skills, hooks, subagents
-and a verification gate."""
+"""minicode v0.12: the agent loop with plan mode, context, MCP, skills, hooks, subagents,
+a verification gate and a permission policy."""
 import json
 import os
 from typing import Callable
@@ -8,6 +8,7 @@ from openai import OpenAI
 
 from minicode.context import HANDOFF_PROMPT, NOTE, compact_instructions
 from minicode.compaction import COMPACT_PROMPT, RESUME, estimate_tokens, extract_summary
+from minicode.security import audit, target_of, wrap_untrusted
 from minicode.prompts import (APPROVED, PLAN_MODE, global_rules, nested_rules,
                               project_rules, system_prompt)
 from minicode.subagents import delegate_schema
@@ -45,6 +46,7 @@ class Agent:
         self.loaded_rules: set = set()                      # nested AGENTS.md already sent
         self.changed: set[str] = set()                      # files edited this turn
         self.gate = None                                    # a VerificationGate, if any
+        self.policy = None                                  # a security.Policy, if any
         self.messages: list[dict] = [
             {"role": "system", "content": system_prompt(workspace.root)}]
 
@@ -127,11 +129,26 @@ class Agent:
             return f"Error: tool '{name}' is not available now. Available: {', '.join(tools)}."
         try:
             args = json.loads(arguments or "{}")
+            if self.policy:                                 # permissions come first
+                decision, reason = self.policy.decide(name, args)
+                audit(self.workspace.root, name, args, decision, reason)
+                if decision == "deny":
+                    return (f"Error: denied by the permission policy ({reason}). Do not try "
+                            "to work around it; tell the user what you need and why.")
+                if decision == "ask" and not self.workspace.confirm(
+                        f"{name}: {target_of(name, args)}"):
+                    return "Error: the user declined this action. Try another approach."
+                self.workspace.preapproved = decision in ("allow", "ask")
             if self.hooks:                                  # pre-tool hooks may block
                 blocked, feedback = self.hooks.run("pre_tool", {"tool": name, "arguments": args})
                 if blocked:
                     return f"Error: blocked by a project hook: {feedback}"
-            result = str(tool(**args))
+            try:
+                result = str(tool(**args))
+            finally:
+                self.workspace.preapproved = False
+            if self.policy and (name.startswith("mcp__") or name == "call_tool"):
+                result = wrap_untrusted(name, result)       # external content is data
             if name == "edit_file":
                 self.changed.add(args.get("path", ""))
             if self.hooks:                                  # post-tool hooks give feedback
@@ -251,6 +268,7 @@ class Agent:
         if self.skills:
             child.add_skills(self.skills)
         child.hooks = self.hooks                            # same rules apply to helpers
+        child.policy = self.policy                          # ... and the same permissions
         allowed = definition["tools"]
         if allowed:                                         # restrict the helper's tools
             child.tools = {n: t for n, t in child.tools.items() if n in allowed}

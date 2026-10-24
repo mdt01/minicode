@@ -17,6 +17,8 @@ class Workspace:
     def __init__(self, root: str | Path, confirm: Callable[[str], bool] | None = None):
         self.root = Path(root).resolve()
         self.confirm = confirm or ask_user
+        self.sandbox = None                 # a security.Sandbox; None = plain subprocess
+        self.preapproved = False            # set by the permission policy for one call
 
     def resolve(self, path: str) -> Path:
         """Turn a relative path into an absolute one, refusing to leave the workspace."""
@@ -83,11 +85,14 @@ class Workspace:
         Commands time out after 60 seconds. Risky commands need the user's approval.
         """
         check_command(command)
-        if is_risky(command) and not self.confirm(command):
+        if is_risky(command) and not self.preapproved and not self.confirm(command):
             raise ToolError("The user declined this command. Try a safer approach or ask the user.")
         try:
-            done = subprocess.run(command, shell=True, cwd=self.root, capture_output=True,
-                                  text=True, timeout=60)
+            if self.sandbox:
+                done = self.sandbox.run(command, self.root)
+            else:
+                done = subprocess.run(command, shell=True, cwd=self.root, capture_output=True,
+                                      text=True, timeout=60)
         except subprocess.TimeoutExpired:
             raise ToolError("Command timed out after 60 seconds.")
         output = (done.stdout + done.stderr).strip() or "(no output)"
