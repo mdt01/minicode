@@ -8,7 +8,9 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 |---|---|---|
 | v0.1 | 3 | Agent loop, three file tools, a simple text-based tool protocol (`minicode/v01_text_protocol.py`) |
 | v0.2 | 3 | Native tool calling, tool schemas from Python functions, a guarded shell tool (`minicode/agent.py`) |
-| later | 4–18 | System prompt and plan mode, MCP, skills, hooks, subagents, background mode ... |
+| v0.3 | 4 | Structured system prompt, AGENTS.md injection, plan mode, compaction, request tracing (`prompts.py`, `compaction.py`, `tracing.py`) |
+| v0.4 | 5 | Context meter and zones, `/clear`, `/handoff` progress notes, `/model` switching, compact instructions from AGENTS.md (`context.py`) |
+| later | 6–18 | MCP, skills, hooks, subagents, background mode ... |
 
 ## Setup
 
@@ -37,8 +39,32 @@ python -m minicode --workspace ../campushub
 ```
 
 Then type a request, for example: *"Explain how event registration works."*
-Commands: `/tokens` shows token usage, `/save` writes the full conversation to
-`session.json`, `/exit` quits.
+
+| Command | What it does |
+|---|---|
+| `/plan` | plan mode: read-only exploration, then a plan in `.minicode/plan.md` |
+| `/go` | approve the plan and implement it |
+| `/compact [focus]` | summarize the conversation to free context |
+| `/context` | what fills the context window, and which zone you are in |
+| `/clear` | forget the conversation and start fresh |
+| `/handoff` | write `.minicode/progress.md`, then start fresh from it |
+| `/model NAME` | switch model (strong for planning, lighter for routine work) |
+| `/tokens` | tokens used so far |
+| `/save` | write the conversation to `session.json` |
+| `/exit` | quit |
+
+Useful options: `--trace trace.jsonl` records every request and response;
+`--context-limit 32000` tells minicode your model's context window (compaction starts at 70%).
+
+## Look inside requests
+
+```bash
+python -m minicode.trace_report trace.jsonl          # what fills the last request?
+python tools/trace_proxy.py --upstream https://api.openai.com --out trace.jsonl
+```
+
+`tools/trace_proxy.py` is a tiny logging proxy (standard library only). Point any agent's
+base URL at `http://127.0.0.1:8080` to record its raw requests. API keys are never logged.
 Risky shell commands (deleting files, installing packages, git push ...) always ask for
 your approval; dangerous ones are blocked.
 

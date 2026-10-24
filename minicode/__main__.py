@@ -3,38 +3,89 @@ import argparse
 import json
 
 from minicode import __version__
-from minicode.agent import Agent, make_client
+from minicode.agent import NOTES_FILE, Agent, make_client
+from minicode.context import meter, zone
 from minicode.tools import Workspace
+from minicode.tracing import TracingClient
+
+HELP = """Commands:
+  /plan          plan mode: read-only exploration, then a written plan
+  /go            approve the plan and implement it
+  /compact [focus]  summarize the conversation to free context
+  /context       what fills the context window, and which zone you are in
+  /clear         forget the conversation and start fresh
+  /handoff       write progress notes to disk, then start fresh from them
+  /model NAME    switch model (strong for planning, lighter for routine work)
+  /tokens        show tokens used so far
+  /save          write the conversation to session.json
+  /exit          quit"""
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="minicode", description="A small coding agent.")
     parser.add_argument("--workspace", default=".", help="folder the agent may work in")
-    parser.add_argument("--yes", action="store_true", help="approve risky shell commands automatically")
+    parser.add_argument("--yes", action="store_true", help="approve risky commands automatically")
+    parser.add_argument("--trace", help="append every request and response to this .jsonl file")
+    parser.add_argument("--context-limit", type=int, default=100_000,
+                        help="context window of your model, in tokens")
     args = parser.parse_args()
 
     client, model = make_client()
+    if args.trace:
+        client = TracingClient(client, args.trace)
     workspace = Workspace(args.workspace, confirm=(lambda _: True) if args.yes else None)
-    agent = Agent(client, model, workspace)
+    agent = Agent(client, model, workspace, context_limit=args.context_limit)
     print(f"minicode {__version__}  |  model: {model}  |  workspace: {workspace.root}")
-    print("Type a request. Commands: /tokens, /save, /exit\n")
+    print(HELP + "\n")
     while True:
         try:
-            text = input("you> ").strip()
+            text = input(f"you{' [plan]' if agent.mode == 'plan' else ''}> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
-        if text in {"/exit", "/quit"}:
+        command, _, rest = text.partition(" ")
+        if command in {"/exit", "/quit"}:
             break
-        if text == "/save":
+        elif command == "/plan":
+            agent.mode = "plan"
+            print("  plan mode on: describe the change you want planned")
+        elif command == "/go":
+            print(f"\nminicode> {agent.approve_plan()}\n")
+        elif command == "/compact":
+            agent.compact(focus=f"\nFocus especially on: {rest}" if rest else "")
+        elif command == "/context":
+            show_context(agent)
+        elif command == "/clear":
+            agent.clear()
+            print("  conversation cleared; project rules will be re-sent")
+        elif command == "/handoff":
+            agent.handoff()
+            print(f"  handoff note saved to {NOTES_FILE}; fresh session started")
+        elif command == "/model":
+            agent.model = rest or agent.model
+            print(f"  model: {agent.model}")
+        elif command == "/tokens":
+            print(f"  tokens so far: {agent.tokens}")
+        elif command == "/save":
             with open("session.json", "w", encoding="utf-8") as f:
                 json.dump(agent.messages, f, indent=2)
             print("  saved the full conversation to session.json")
-            continue
-        if text == "/tokens":
-            print(f"  tokens so far: {agent.tokens}")
-            continue
-        if text:
+        elif command == "/help":
+            print(HELP)
+        elif text:
             print(f"\nminicode> {agent.run_turn(text)}\n")
+            used = agent.context_used()
+            if used > agent.context_limit / 2:              # warn when leaving the smart zone
+                print(f"  [context {100 * used / agent.context_limit:.0f}% - "
+                      f"{zone(used, agent.context_limit)}]")
+
+
+def show_context(agent: Agent) -> None:
+    """A context meter: estimated tokens per category, and the current zone."""
+    used, limit = agent.context_used(), agent.context_limit
+    for name, count in meter(agent.request_preview()):
+        print(f"  {name:<26}{count:>8,}")
+    print(f"  {'total':<26}{used:>8,} of {limit:,} ({100 * used / limit:.0f}%)")
+    print(f"  {zone(used, limit)}; auto-compact at {agent.compact_at:.0%}")
 
 
 if __name__ == "__main__":
