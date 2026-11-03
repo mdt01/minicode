@@ -40,6 +40,9 @@ def test_dangerous_commands_are_blocked():
 
 def test_risky_commands_need_approval(ws):
     assert is_risky("rm app/utils.py")
+    for windows in ("rmdir /s /q tests", "del /q app\\utils.py", "Remove-Item -Recurse tests"):
+        assert is_risky(windows)
+    assert is_risky("python -c \"import shutil; shutil.rmtree('tests')\"")
     assert not is_risky("pytest -q")
     with pytest.raises(ToolError, match="declined"):
         ws.run_bash("rm app/utils.py")

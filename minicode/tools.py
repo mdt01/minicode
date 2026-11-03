@@ -107,7 +107,11 @@ class Workspace:
 BLOCKED = [r"\brm\s+-rf\s+/(\s|$)", r"\bmkfs\b", r"\bshutdown\b", r"\breboot\b", r":\(\)\s*\{",
            r"\bcurl\b[^|]*\|\s*(ba)?sh", r"\bwget\b[^|]*\|\s*(ba)?sh", r"\bdd\s+if=", r"git\s+push\s+.*--force"]
 RISKY = [r"\brm\b", r"\bmv\b", r"\bgit\s+(push|reset|checkout|clean)\b", r"\bpip\s+install\b",
-         r"\bnpm\s+install\b", r"\bchmod\b", r"\bsudo\b", r">\s*\S"]
+         r"\bnpm\s+install\b", r"\bchmod\b", r"\bsudo\b", r">\s*\S",
+         # Windows shells delete and move with other words (found in Lab 3 on Windows)
+         r"(?i)\b(rmdir|rd|del|erase|move|ren)\b", r"(?i)\bremove-item\b",
+         # deleting from inside an interpreter
+         r"\b(rmtree|unlink|os\.remove)\b"]
 
 
 def check_command(command: str) -> None:
