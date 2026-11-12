@@ -14,6 +14,7 @@ least 80% of the checks at that level and every level below it pass.
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -50,8 +51,7 @@ class Repo:
         self.python_exe = python or self.find_python()
         self.test_runs = test_runs
         self._test_results: list[tuple[bool, float]] | None = None
-        self.files = [p for p in self.root.rglob("*")
-                      if p.is_file() and not SKIP & set(p.relative_to(self.root).parts)]
+        self.files = project_files(self.root)
         self.python = [p for p in self.files if p.suffix == ".py"]
         self.source = [p for p in self.python
                        if not self.is_test(p) and p.name != "__init__.py"]
@@ -101,6 +101,27 @@ class Repo:
                 self._test_results.append((done.returncode == 0,
                                            time.perf_counter() - start))
         return self._test_results
+
+
+def project_files(root: Path) -> list[Path]:
+    """Every file of the project, skipping tool folders and any virtual environment.
+
+    A folder with pyvenv.cfg is a virtual environment whatever its name (.venv-mcp in Lab 7),
+    and a file that cannot even be examined - a Linux symlink seen from Windows, found in the
+    labs - is skipped instead of stopping the scan.
+    """
+    files = []
+    for folder, dirs, names in os.walk(root):
+        dirs[:] = sorted(d for d in dirs
+                         if d not in SKIP and not (Path(folder, d) / "pyvenv.cfg").exists())
+        for name in sorted(names):
+            path = Path(folder, name)
+            try:
+                if path.is_file():
+                    files.append(path)
+            except OSError:
+                continue
+    return files
 
 
 def runs(python: Path) -> bool:

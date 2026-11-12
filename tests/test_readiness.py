@@ -72,3 +72,26 @@ def test_a_venv_from_another_os_is_not_used(tmp_path):
     fake.parent.mkdir(parents=True)
     fake.write_bytes(b"\x7fELF not runnable here")
     assert Repo(tmp_path).find_python() == sys.executable
+
+
+def test_virtual_environments_and_unreadable_files_are_skipped(tmp_path, monkeypatch):
+    """Lab 11: the scan crashed on a Linux symlink in .venv and counted .venv-mcp as project code."""
+    from pathlib import Path
+    from minicode.readiness import project_files
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text("x = 1\n")
+    env = tmp_path / ".venv-mcp" / "Lib"
+    env.mkdir(parents=True)
+    (tmp_path / ".venv-mcp" / "pyvenv.cfg").write_text("home = x\n")
+    (env / "site.py").write_text("y = 2\n")
+    (tmp_path / "broken.py").write_text("z = 3\n")
+    real_is_file = Path.is_file
+
+    def is_file(self):
+        if self.name == "broken.py":
+            raise OSError("[WinError 1920] The file cannot be accessed by the system")
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+    names = [p.relative_to(tmp_path).as_posix() for p in project_files(tmp_path)]
+    assert names == ["app/main.py"]
