@@ -70,6 +70,7 @@ Then type a request, for example: *"Explain how event registration works."*
 
 Useful options: `--trace trace.jsonl` records every request and response;
 `--context-limit 32000` tells minicode your model's context window (compaction starts at 70%).
+`--max-steps 40` lets the agent make more tool calls per request (default 25).
 
 ## Connect MCP servers
 

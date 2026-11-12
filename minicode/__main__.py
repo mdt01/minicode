@@ -55,6 +55,8 @@ def main() -> None:
     parser.add_argument("--sandbox-image", default="python:3.12-slim")
     parser.add_argument("--context-limit", type=int, default=100_000,
                         help="context window of your model, in tokens")
+    parser.add_argument("--max-steps", type=int, default=25,
+                        help="tool calls the agent may make for one request before it stops")
     args = parser.parse_args()
 
     client, model = make_client()
@@ -68,7 +70,8 @@ def main() -> None:
         confirm = None
     workspace = Workspace(args.workspace, confirm=confirm)
     workspace.sandbox = Sandbox(args.sandbox, args.sandbox_image)
-    agent = Agent(client, model, workspace, context_limit=args.context_limit)
+    agent = Agent(client, model, workspace, context_limit=args.context_limit,
+                  max_steps=args.max_steps)
     quiet = (lambda _: None) if args.prompt else print
     servers = connect_all(workspace.root, on_event=quiet)   # tools from .mcp.json
     for server in servers:

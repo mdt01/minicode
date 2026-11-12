@@ -38,3 +38,20 @@ def test_session_survives_a_failed_model_call(tmp_path, monkeypatch, capsys):
     assert "model call failed (APIConnectionError" in out
     assert "minicode> hello again" in out          # the session went on
     assert client.calls == 2
+
+
+def test_max_steps_option_reaches_the_agent(tmp_path, monkeypatch):
+    created = {}
+    real_agent = cli.Agent
+
+    def spy(*args, **kwargs):
+        agent = real_agent(*args, **kwargs)
+        created["agent"] = agent
+        return agent
+
+    monkeypatch.setattr(cli, "Agent", spy)
+    monkeypatch.setattr(cli, "make_client", lambda: (FlakyClient(), "fake"))
+    monkeypatch.setattr("sys.argv", ["minicode", "--workspace", str(tmp_path), "--max-steps", "40"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt="": "/exit")
+    cli.main()
+    assert created["agent"].max_steps == 40

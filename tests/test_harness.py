@@ -137,3 +137,13 @@ def test_meter_and_zones(tmp_path):
     names = [name for name, _ in meter(agent.request_preview())]
     assert names[0].startswith("tools") or names[0] == "system prompt"
     assert zone(10, 100) == "smart zone" and zone(80, 100).startswith("dumb")
+
+
+def test_system_prompt_names_the_shell(tmp_path, monkeypatch):
+    """On Windows the model must know that grep, sed and head do not exist (found in Lab 6)."""
+    from minicode import prompts
+    monkeypatch.setattr(prompts.platform, "system", lambda: "Windows")
+    windows = prompts.system_prompt(tmp_path)
+    assert "cmd.exe" in windows and "git grep" in windows
+    monkeypatch.setattr(prompts.platform, "system", lambda: "Linux")
+    assert "grep, sed and head are available" in prompts.system_prompt(tmp_path)
