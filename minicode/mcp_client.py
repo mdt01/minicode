@@ -11,12 +11,13 @@ Each server's tools appear to the model as mcp__<server>__<tool>.
 import asyncio
 import concurrent.futures
 import json
-import os
 import threading
 from pathlib import Path
 from typing import Callable
 
 from mcp import Client, StdioServerParameters
+
+from minicode.security import clean_env
 
 
 class MCPConnection:
@@ -84,9 +85,15 @@ def target_from_config(entry: dict, root: Path):
     """Turn one .mcp.json entry into something mcp.Client can connect to."""
     if "url" in entry:
         return entry["url"]                                    # remote: streamable HTTP
+    command = entry["command"]
+    if ("/" in command or "\\" in command) and (root / command).exists():
+        command = str(root / command)          # ".venv-mcp/bin/python" means inside the project,
+                                               # also on Windows, where relative paths are not
+                                               # looked up in the server's cwd
     return StdioServerParameters(                              # local: a subprocess
-        command=entry["command"], args=entry.get("args", []),
-        env={**os.environ, **entry.get("env", {})}, cwd=entry.get("cwd", str(root)))
+        command=command, args=entry.get("args", []),
+        # Servers never inherit your API keys: only what .mcp.json passes in "env" explicitly.
+        env={**clean_env(), **entry.get("env", {})}, cwd=entry.get("cwd", str(root)))
 
 
 def connect_all(root: Path, on_event=print) -> list[MCPConnection]:

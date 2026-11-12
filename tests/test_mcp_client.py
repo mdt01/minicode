@@ -54,3 +54,23 @@ def test_config_entries_become_targets(tmp_path):
     assert target_from_config({"url": "http://x/mcp"}, tmp_path) == "http://x/mcp"
     stdio = target_from_config({"command": "python", "args": ["s.py"]}, tmp_path)
     assert stdio.command == "python" and stdio.args == ["s.py"] and stdio.cwd == str(tmp_path)
+
+
+def test_stdio_servers_do_not_inherit_api_keys(tmp_path, monkeypatch):
+    """Found in Lab 7: local servers received LLM_API_KEY. Hooks and the shell never did."""
+    monkeypatch.setenv("LLM_API_KEY", "sk-test-not-for-servers")
+    monkeypatch.setenv("CAMPUSHUB_URL", "http://127.0.0.1:8000")
+    target = target_from_config({"command": "python", "args": ["s.py"],
+                                 "env": {"SERVER_TOKEN": "given-on-purpose"}}, tmp_path)
+    assert "LLM_API_KEY" not in target.env
+    assert target.env["CAMPUSHUB_URL"] == "http://127.0.0.1:8000"
+    assert target.env["SERVER_TOKEN"] == "given-on-purpose"      # explicit env still works
+
+
+def test_relative_command_is_resolved_inside_the_project(tmp_path):
+    venv_python = tmp_path / ".venv-mcp" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("")
+    target = target_from_config({"command": ".venv-mcp/bin/python", "args": []}, tmp_path)
+    assert target.command == str(tmp_path / ".venv-mcp/bin/python")
+    assert target_from_config({"command": "python"}, tmp_path).command == "python"
