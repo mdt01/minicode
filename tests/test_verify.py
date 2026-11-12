@@ -3,7 +3,7 @@ import sys
 
 from minicode.agent import Agent
 from minicode.tools import Workspace
-from minicode.verify import VerificationGate, compare, fingerprint_source
+from minicode.verify import VerificationGate, compare, fingerprint_source, snapshot
 from tests.test_agent_loop import ScriptedClient, tool_call
 
 TEST_FILE = '''import pytest
@@ -65,3 +65,15 @@ def test_verification_command_must_pass(tmp_path):
     agent = Agent(client, "fake", Workspace(tmp_path), on_event=lambda _: None)
     agent.gate = VerificationGate(tmp_path, command=check)
     assert agent.run_turn("change app.py") == "Done, verified."
+
+
+def test_snapshot_skips_virtual_environments(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_calc.py").write_text(TEST_FILE)
+    venv = tmp_path / ".venv-mcp"                       # any name: pyvenv.cfg marks it
+    (venv / "Lib" / "site-packages" / "pkg" / "tests").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (venv / "Lib" / "site-packages" / "pkg" / "tests" / "test_pkg.py").write_bytes(
+        b"def test_x():\n    assert '\xe9'\n")             # not UTF-8 either
+    assert sorted(snapshot(tmp_path)) == ["tests/test_calc.py::test_negative",
+                                          "tests/test_calc.py::test_total"]

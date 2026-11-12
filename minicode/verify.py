@@ -12,9 +12,12 @@ Two checks run when the model gives its final answer:
 """
 import ast
 import subprocess
+from fnmatch import fnmatch
 from pathlib import Path
 
-TEST_GLOBS = ("tests/**/test_*.py", "tests/**/*_test.py", "**/tests/test_*.py")
+from minicode.readiness import project_files
+
+TEST_NAMES = ("test_*.py", "*_test.py")
 
 
 def fingerprint_source(source: str) -> dict[str, dict]:
@@ -42,14 +45,24 @@ def fingerprint_source(source: str) -> dict[str, dict]:
 
 
 def snapshot(root: Path) -> dict[str, dict]:
-    """Fingerprints of every test in the project, keyed "file::test"."""
+    """Fingerprints of every test in the project, keyed "file::test".
+
+    A test file is test_*.py or *_test.py inside a folder called tests. Virtual
+    environments (any folder with pyvenv.cfg, e.g. .venv-mcp) are skipped: their
+    installed packages' tests are not the project's, and a venv made on another
+    operating system may hold links this one cannot read.
+    """
     found = {}
-    files = {p for g in TEST_GLOBS for p in root.glob(g)
-             if ".venv" not in p.parts and "node_modules" not in p.parts}
-    for file in sorted(files):
-        rel = file.relative_to(root).as_posix()
-        for name, info in fingerprint_source(file.read_text(encoding="utf-8")).items():
-            found[f"{rel}::{name}"] = info
+    for file in project_files(root):
+        rel = file.relative_to(root)
+        if "tests" not in rel.parts[:-1] or not any(fnmatch(rel.name, n) for n in TEST_NAMES):
+            continue
+        try:
+            source = file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for name, info in fingerprint_source(source).items():
+            found[f"{rel.as_posix()}::{name}"] = info
     return found
 
 
