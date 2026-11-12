@@ -84,3 +84,29 @@ def test_no_changes_and_cancellation(tmp_path):
         return factory(EDIT)(path, t, on_event)
     done = Worker(store, cancelling).run_task(task)
     assert done["status"] == "cancelled"
+
+
+def test_tokens_of_a_crashed_attempt_still_count(tmp_path):
+    """Lab 15: a worker killed mid-agent left 0 tokens in the task file, so the paid
+    tokens of that attempt vanished from the cost and from the budget."""
+    repo = make_repo(tmp_path)
+    store = TaskStore(repo)
+    task = store.add("Set x to 2")
+    worker = Worker(store, factory(EDIT))
+    worker.step_worktree(task)
+    task["done_steps"], task["status"] = ["worktree"], "running"
+    store.save(task)                                   # task file: 0 tokens
+    store.log(task["id"], "event", "-> read_file(...)")
+    store.log(task["id"], "tokens", "5000")            # what the log saw before the crash
+    with (store.dir / f"{task['id']}.log.jsonl").open("a") as f:
+        f.write('{"time": "cut off by the cra')        # a half-written last line
+    done = worker.run_task(store.load(task["id"]))
+    assert done["status"] == "done" and done["tokens"] == 5000 + 240
+
+
+def test_token_counts_are_logged_while_the_agent_works(tmp_path):
+    repo = make_repo(tmp_path)
+    store = TaskStore(repo)
+    task = store.add("Set x to 2")
+    Worker(store, factory(EDIT)).run_task(task)
+    assert store.logged_tokens(task["id"]) > 0

@@ -64,6 +64,21 @@ class TaskStore:
         with (self.dir / f"{task_id}.log.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
 
+    def logged_tokens(self, task_id: str) -> int:
+        """The last token count written to the log: survives a crash mid-agent, when the
+        task file still holds the count from before the interrupted attempt."""
+        log = self.dir / f"{task_id}.log.jsonl"
+        used = 0
+        if log.is_file():
+            for line in log.read_text(encoding="utf-8").splitlines():
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:              # a line cut off by the crash
+                    continue
+                if entry.get("kind") == "tokens":
+                    used = int(entry["text"])
+        return used
+
     def add(self, prompt: str, title: str = "", budget: int = 300_000,
             base: str = "HEAD", issue: int | None = None) -> dict:
         task_id = uuid.uuid4().hex[:6]
@@ -164,11 +179,20 @@ class Worker:
                 task["base"])
 
     def step_agent(self, task: dict) -> None:
+        # tokens paid for by an attempt that crashed still count against the budget
+        task["tokens"] = max(task["tokens"], self.store.logged_tokens(task["id"]))
+        holder: dict = {}
+
         def on_event(text: str) -> None:              # durable log + cancellation check
             self.store.log(task["id"], "event", text.strip()[:500])
+            used = getattr(getattr(holder.get("agent"), "client", None), "used", None)
+            if isinstance(used, int) and used != holder.get("logged"):
+                self.store.log(task["id"], "tokens", str(used))   # append-only: no race
+                holder["logged"] = used                           # with `cancel`
             if self.store.load(task["id"])["status"] == "cancel-requested":
                 raise Cancelled("cancelled while the agent was working")
         agent = self.make_agent(self.worktree_path(task), task, on_event)
+        holder["agent"] = agent
         try:
             task["answer"] = agent.run_turn(task_prompt(task))
         finally:
