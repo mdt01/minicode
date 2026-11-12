@@ -62,3 +62,13 @@ def test_flaky_suite_is_detected(tmp_path):
     repo._test_results = [(True, 1.0), (False, 1.1), (True, 0.9)]   # pretend runs
     ok, detail = readiness.tests_stable(repo)
     assert not ok and "failed 1 of 3" in detail
+
+
+def test_a_venv_from_another_os_is_not_used(tmp_path):
+    """Found in the Windows labs: a Linux .venv on a shared drive exists but cannot start."""
+    import sys
+    from minicode.readiness import Repo
+    fake = tmp_path / ".venv" / "bin" / "python"
+    fake.parent.mkdir(parents=True)
+    fake.write_bytes(b"\x7fELF not runnable here")
+    assert Repo(tmp_path).find_python() == sys.executable

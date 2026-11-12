@@ -57,11 +57,16 @@ class Repo:
                        if not self.is_test(p) and p.name != "__init__.py"]
 
     def find_python(self) -> str:
-        """The project's own virtual environment if it has one, else this Python."""
+        """The project's own virtual environment if it has one that runs here, else this Python.
+
+        A .venv made on another operating system (e.g. a Linux venv on a shared drive, found in
+        the Windows labs) exists but cannot start, so each candidate is tried first.
+        """
         for venv in (".venv", "venv"):
             for exe in ("Scripts/python.exe", "bin/python"):
-                if (self.root / venv / exe).is_file():
-                    return str(self.root / venv / exe)
+                candidate = self.root / venv / exe
+                if candidate.is_file() and runs(candidate):
+                    return str(candidate)
         return sys.executable
 
     def is_test(self, path: Path) -> bool:
@@ -96,6 +101,15 @@ class Repo:
                 self._test_results.append((done.returncode == 0,
                                            time.perf_counter() - start))
         return self._test_results
+
+
+def runs(python: Path) -> bool:
+    """True if this interpreter starts on this machine."""
+    try:
+        return subprocess.run([str(python), "-c", "pass"], capture_output=True,
+                              timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 # ---- the checks --------------------------------------------------------------------
