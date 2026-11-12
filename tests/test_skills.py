@@ -74,3 +74,18 @@ def test_headless_mode_reports_errors_as_exit_code(tmp_path):
                           timeout=60)
     assert done.returncode == 1
     assert "error" in json.loads(done.stderr)
+
+
+def test_description_may_continue_on_indented_lines(tmp_path):
+    """Listing 9.8 wraps the description over several lines; all of it must reach the model."""
+    from minicode.skills import parse_skill
+    folder = tmp_path / ".agents" / "skills" / "release-notes"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: release-notes\ndescription: Write release notes from git history. Use when asked\n"
+        "  for release notes, a changelog entry or \"what changed since the last release\".\n"
+        "---\nBody\n", encoding="utf-8")
+    meta = parse_skill(folder / "SKILL.md")
+    assert meta["description"] == ('Write release notes from git history. Use when asked for release '
+                                   'notes, a changelog entry or "what changed since the last release".')
+    assert meta["name"] == "release-notes" and meta["body"] == "Body"

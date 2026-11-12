@@ -25,9 +25,14 @@ def parse_skill(file: Path) -> dict:
     meta, body = {}, text
     if text.startswith("---"):
         header, _, body = text[3:].partition("\n---")
+        key = None
         for line in header.strip().splitlines():
+            if line[:1] in (" ", "\t") and key:          # an indented line continues the value
+                meta[key] = f"{meta[key]} {line.strip()}".strip()
+                continue
             key, _, value = line.partition(":")
-            meta[key.strip()] = value.strip().strip('"')
+            key = key.strip()
+            meta[key] = value.strip().strip('"')
     meta.setdefault("name", file.parent.name)
     meta.setdefault("description", "")
     meta["body"] = body.strip()
