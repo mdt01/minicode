@@ -110,11 +110,14 @@ declined automatically unless you add `--yes`.
 ## Evaluate a tool set
 
 ```bash
-python -m minicode.evaluate tasks.json --workspace ../campushub --runs 3 [--tool-search]
+python -m minicode.evaluate tasks.json --workspace ../campushub --runs 3 [--tool-search] [--verbose] [--allow-edits]
 ```
 
 `tasks.json` lists prompts with the tools and facts you expect; the report shows success,
-tool calls, errors and input tokens per task.
+tool calls, errors and input tokens per task. Expected facts may list alternatives (`"not found|does not exist"`);
+`--verbose` shows the answers of failed tasks. The agents cannot edit files or run shell
+commands during an evaluation unless you add `--allow-edits`, and minicode warns if the
+workspace changed anyway.
 
 ## Look inside requests
 

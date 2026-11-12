@@ -39,8 +39,8 @@ class ToolCatalog:
         e.g. '{"days": 7}'."""
         if name not in self.entries:
             return f"Error: no tool named '{name}'. Use search_tools to find it."
-        try:
-            args = json.loads(arguments or "{}")
+        try:   # models often send an object instead of a JSON string (Lab 8): accept both
+            args = arguments if isinstance(arguments, dict) else json.loads(arguments or "{}")
         except json.JSONDecodeError:
             return "Error: arguments must be a JSON object string, e.g. '{\"days\": 7}'."
         function, _ = self.entries[name]
