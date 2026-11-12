@@ -6,3 +6,6 @@ __pycache__/
 session.json
 .minicode/
 trace*.jsonl
+*.jsonl
+.env.*
+!.env.example

@@ -81,6 +81,21 @@ def code_around(root: Path, file: str, line: int, radius: int = 15) -> str:
                      enumerate(lines[start:line + radius], start + 1))
 
 
+def imports_of(root: Path, file: str) -> str:
+    """The import lines at the top of a file, numbered. The verifier sees only 30 lines
+    around a finding; without these it cannot refute a claimed "missing import"."""
+    path = root / file
+    if not path.is_file():
+        return ""
+    found = []
+    for n, text in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+        if text.startswith(("def ", "class ", "@", "async def ")):
+            break
+        if text.startswith(("import ", "from ")):
+            found.append(f"{n:>4}  {text}")
+    return "\n".join(found)
+
+
 # ---- model calls -------------------------------------------------------------------
 class Reviewer:
     def __init__(self, client, model: str, root: Path):
@@ -119,6 +134,8 @@ class Reviewer:
     def verify(self, finding: dict) -> dict:
         user = (f"Finding ({finding['severity']}): {finding.get('title', '')}\n"
                 f"Evidence given: {finding.get('evidence', '')}\n\n"
+                f"Imports at the top of {finding['file']}:\n"
+                f"{imports_of(self.root, finding['file']) or '(none)'}\n\n"
                 f"Code in {finding['file']} around line {finding['line']}:\n"
                 f"{code_around(self.root, finding['file'], finding['line'])}")
         answer = self.ask_json(VERIFY_PROMPT, user)
@@ -166,16 +183,32 @@ def to_markdown(findings: list[dict], dropped: int, tokens: dict) -> str:
             f"AI review assists; a human approves._\n")
 
 
+def matches(finding: dict, bug: dict, window: int) -> bool:
+    """Does a finding report this seeded bug?
+
+    Models often get line numbers wrong by a few lines, so a line window alone credits
+    the wrong bug. When the bug lists "keywords", a finding must mention one of them
+    (in its title or evidence) and may be up to 10 lines away.
+    """
+    if finding["file"] != bug["file"]:
+        return False
+    keywords = [k.lower() for k in bug.get("keywords", [])]
+    if not keywords:
+        return abs(finding["line"] - bug["line"]) <= window
+    text = f"{finding.get('title', '')} {finding.get('evidence', '')}".lower()
+    return abs(finding["line"] - bug["line"]) <= 10 and any(k in text for k in keywords)
+
+
 def score(findings: list[dict], expected: list[dict], window: int = 3) -> dict:
     """Compare with known (seeded) bugs: catch rate, and findings to triage by hand."""
     caught, matched = [], set()
     for bug in expected:
-        for i, f in enumerate(findings):
-            if i not in matched and f["file"] == bug["file"] \
-                    and abs(f["line"] - bug["line"]) <= window:
-                caught.append(bug["id"])
-                matched.add(i)
-                break
+        candidates = [i for i, f in enumerate(findings)
+                      if i not in matched and matches(f, bug, window)]
+        if candidates:
+            best = min(candidates, key=lambda i: abs(findings[i]["line"] - bug["line"]))
+            caught.append(bug["id"])
+            matched.add(best)
     others = [f for i, f in enumerate(findings) if i not in matched]
     return {"caught": caught, "missed": [b["id"] for b in expected if b["id"] not in caught],
             "catch_rate": len(caught) / len(expected) if expected else 1.0,
@@ -205,7 +238,8 @@ def main() -> None:
     parser.add_argument("--no-verify-pass", action="store_true")
     parser.add_argument("--markdown", help="also write the report to this file")
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--expect", help="JSON list of known bugs: report the catch rate")
+    parser.add_argument("--expect", help="JSON list of known bugs (file, line, optional "
+                        "keywords): report the catch rate")
     parser.add_argument("--fail-on", default="blocker", choices=SEVERITIES + ["never"])
     args = parser.parse_args()
 

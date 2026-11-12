@@ -3,7 +3,7 @@ import json
 import subprocess
 import threading
 
-from minicode.review import aggregate, get_diff, review, score, to_markdown
+from minicode.review import aggregate, get_diff, imports_of, review, score, to_markdown
 from tests.test_agent_loop import completion
 
 
@@ -77,3 +77,23 @@ def test_score_counts_each_finding_once():
     result = score(findings, expected)
     assert result["caught"] == ["B2"] and result["missed"] == ["B3", "B5"]
     assert result["other_findings"] == 1
+
+
+def test_keywords_stop_a_nearby_finding_being_credited_to_the_wrong_bug():
+    # Lab 13: the model put both findings near line 51; the bugs are at 56 and 57.
+    expected = [{"id": "B2", "file": "a.py", "line": 56, "keywords": ["404", "200"]},
+                {"id": "B3", "file": "a.py", "line": 57, "keywords": ["below", "registrations"]}]
+    findings = [{"file": "a.py", "line": 54, "title": "Error returned as 200 response"},
+                {"file": "a.py", "line": 51, "title": "New endpoint without a test"}]
+    result = score(findings, expected)
+    assert result["caught"] == ["B2"] and result["missed"] == ["B3"]   # not two catches
+    findings.append({"file": "a.py", "line": 49, "title": "Capacity update",
+                     "evidence": "capacity may drop below current registrations"})
+    assert score(findings, expected)["caught"] == ["B2", "B3"]
+
+
+def test_verifier_sees_the_import_block(tmp_path):
+    (tmp_path / "m.py").write_text("from x import text\nimport os\n\n\ndef f():\n"
+                                   "    import json\n    return text\n")
+    assert imports_of(tmp_path, "m.py") == "   1  from x import text\n   2  import os"
+    assert imports_of(tmp_path, "missing.py") == ""
