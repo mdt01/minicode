@@ -3,6 +3,8 @@ import argparse
 import json
 import sys
 
+from openai import APIError
+
 from minicode import __version__
 from minicode.agent import NOTES_FILE, Agent, make_client
 from minicode import commands
@@ -100,17 +102,20 @@ def main() -> None:
             agent.mode = "plan"
             print("  plan mode on: describe the change you want planned")
         elif command == "/go":
-            print(f"\nminicode> {agent.approve_plan()}\n")
+            print(f"\nminicode> {safely(agent.approve_plan)}\n")
         elif command == "/compact":
-            agent.compact(focus=f"\nFocus especially on: {rest}" if rest else "")
+            failed = safely(agent.compact, quiet=True,
+                            focus=f"\nFocus especially on: {rest}" if rest else "")
+            if failed:
+                print(failed)
         elif command == "/context":
             show_context(agent)
         elif command == "/clear":
             agent.clear()
             print("  conversation cleared; project rules will be re-sent")
         elif command == "/handoff":
-            agent.handoff()
-            print(f"  handoff note saved to {NOTES_FILE}; fresh session started")
+            failed = safely(agent.handoff, quiet=True)
+            print(failed or f"  handoff note saved to {NOTES_FILE}; fresh session started")
         elif command == "/model":
             agent.model = rest or agent.model
             print(f"  model: {agent.model}")
@@ -135,11 +140,21 @@ def main() -> None:
                     print(f"  unknown command {command}; type /help")
                     continue
                 text = prompt
-            print(f"\nminicode> {agent.run_turn(text)}\n")
+            print(f"\nminicode> {safely(agent.run_turn, text)}\n")
             used = agent.context_used()
             if used > agent.context_limit / 2:              # warn when leaving the smart zone
                 print(f"  [context {100 * used / agent.context_limit:.0f}% - "
                       f"{zone(used, agent.context_limit)}]")
+
+
+def safely(action, *args, quiet: bool = False, **kwargs) -> str:
+    """Run one model call. A network or API error ends this turn, not the whole session."""
+    try:
+        result = action(*args, **kwargs)
+        return "" if quiet else result
+    except APIError as exc:
+        return (f"  model call failed ({type(exc).__name__}: {exc}). "
+                "The session is still open: try again, or /save your work.")
 
 
 def headless(agent: Agent, prompt: str, as_json: bool) -> int:
