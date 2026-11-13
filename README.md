@@ -24,6 +24,9 @@ grows, chapter by chapter, into a miniature version of a production coding agent
 | v0.15 | 17 | A teaching LLM gateway (virtual keys, routing by task, fallbacks, budgets, cache, JSON log) and a cost report/dashboard; clients send `X-Task` and `X-Feature` headers (`gateway.py`, `cost_report.py`) |
 | v1.0 | 18 | A mini software factory: executable TOML specs, plan → implement → verify (tests, scan of changed files, checker) → publish → preview deploy with HTTP smoke checks and a log watcher; human checkpoints (`python -m minicode.factory`) (`factory.py`) |
 | v1.0.1 | Capstone | Factory specs can run `setup` commands before the preview (e.g. seed a database) and send `headers` in smoke checks (e.g. a login token from an earlier step); `--repo` works before or after the sub-command in `background`, `loop` and `factory` |
+| v1.0.2 | Revised printing | Fixes from running every lab on Windows and Linux: Windows-aware shell prompt and risky-command list, `--max-steps`, MCP servers and agent commands without credentials or keyboard input and with a real timeout, edits that keep line endings, safer evaluations, skill descriptions over several lines, readiness and the verify gate skip virtual environments, keyword matching for seeded bugs, crash-safe token counts, robust APPROVE/REJECT parsing, gateway budgets that return 402 and survive restarts, factory scope checks (`allowed_paths`) and complete failure reports |
+
+Each version is a commit in the history of `main` whose message starts with its number (`git log --oneline`); v0.2 also has a tag. The labs use the latest `main`.
 
 ## Setup
 
