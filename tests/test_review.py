@@ -3,7 +3,15 @@ import json
 import subprocess
 import threading
 
-from minicode.review import aggregate, get_diff, imports_of, review, score, to_markdown
+from minicode.review import (
+    aggregate,
+    get_diff,
+    imports_of,
+    review,
+    review_context,
+    score,
+    to_markdown,
+)
 from tests.test_agent_loop import completion
 
 
@@ -97,3 +105,11 @@ def test_verifier_sees_the_import_block(tmp_path):
                                    "    import json\n    return text\n")
     assert imports_of(tmp_path, "m.py") == "   1  from x import text\n   2  import os"
     assert imports_of(tmp_path, "missing.py") == ""
+
+
+def test_spec_path_is_relative_to_the_repo(tmp_path, monkeypatch):
+    """--spec docs/spec.md with --repo elsewhere crashed (FileNotFoundError) in the capstone."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "spec.md").write_text("T-7 hidden tickets answer 404", encoding="utf-8")
+    monkeypatch.chdir(tmp_path.parent)
+    assert "T-7 hidden tickets answer 404" in review_context(tmp_path, "docs/spec.md")

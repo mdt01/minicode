@@ -65,17 +65,21 @@ class Workspace:
             if file.exists():
                 raise ToolError(f"'{path}' already exists. Pass the text to replace as old_text.")
             file.parent.mkdir(parents=True, exist_ok=True)
-            file.write_text(new_text, encoding="utf-8")
+            file.write_bytes(new_text.encode("utf-8"))      # "\n" stays "\n", also on Windows
             return f"Created {path} ({len(new_text.splitlines())} lines)."
         if not file.is_file():
             raise ToolError(f"No file at '{path}'.")
-        content = file.read_text(encoding="utf-8")
+        raw = file.read_bytes().decode("utf-8")
+        newline = "\r\n" if "\r\n" in raw else "\n"       # keep the file's own line endings
+        content = raw.replace("\r\n", "\n")
+        old_text, new_text = old_text.replace("\r\n", "\n"), new_text.replace("\r\n", "\n")
         count = content.count(old_text)
         if count == 0:
             raise ToolError("old_text was not found. Read the file again and copy the text exactly.")
         if count > 1:
             raise ToolError(f"old_text appears {count} times. Include more surrounding lines so it is unique.")
-        file.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
+        edited = content.replace(old_text, new_text, 1)
+        file.write_bytes(edited.replace("\n", newline).encode("utf-8"))
         return f"Edited {path}."
 
     def run_bash(self, command: str) -> str:

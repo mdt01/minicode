@@ -65,9 +65,10 @@ def review_context(root: Path, spec: str | None = None) -> str:
         file = root / name
         if file.is_file():
             parts.append(f"## {title}\n{file.read_text(encoding='utf-8').strip()}")
-    if spec:
+    if spec:                                  # relative to --repo, like every other path
+        file = root / spec if (root / spec).is_file() else Path(spec)
         parts.append(f"## The spec or plan this change implements\n"
-                     f"{Path(spec).read_text(encoding='utf-8').strip()}")
+                     f"{file.read_text(encoding='utf-8').strip()}")
     return "\n\n".join(parts)
 
 

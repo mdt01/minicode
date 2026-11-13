@@ -47,3 +47,15 @@ def test_risky_commands_need_approval(ws):
     with pytest.raises(ToolError, match="declined"):
         ws.run_bash("rm app/utils.py")
     assert "exit code 0" in ws.run_bash("ls app")
+
+
+def test_edits_keep_each_files_line_endings(ws):
+    """On Windows, text-mode writes turned every edited LF file into CRLF (capstone run)."""
+    (ws.root / "lf.py").write_bytes(b"a = 1\nb = 2\n")
+    (ws.root / "crlf.py").write_bytes(b"a = 1\r\nb = 2\r\n")
+    ws.edit_file("lf.py", "a = 1\nb = 2", "a = 1\nb = 3")
+    ws.edit_file("crlf.py", "a = 1\nb = 2", "a = 1\nb = 3")
+    ws.edit_file("new.py", "", "x = 1\ny = 2\n")
+    assert (ws.root / "lf.py").read_bytes() == b"a = 1\nb = 3\n"
+    assert (ws.root / "crlf.py").read_bytes() == b"a = 1\r\nb = 3\r\n"
+    assert (ws.root / "new.py").read_bytes() == b"x = 1\ny = 2\n"
