@@ -60,10 +60,14 @@ delete existing tests. Stay inside the spec's scope. Nobody can answer questions
 {feedback}"""
 
 CHECKER_PROMPT = """You are the CHECKER in a software factory. You did not write this change.
-All verify commands passed. Decide whether the change implements the spec honestly:
-every acceptance criterion covered by code and a test, nothing out of scope, no weakened
-tests, no obvious bugs or security problems. End your reply with one line that is
-exactly APPROVE, or REJECT: followed by the reasons.
+You can read files but not run commands: the factory already ran these checks on this
+attempt, and they all passed:
+{checks}
+Decide whether the change implements the spec honestly: every acceptance criterion covered
+by code and a test, nothing out of scope, no weakened tests, no obvious bugs or security
+problems. An existing test may change only where an acceptance criterion requires it; name
+each such change. End your reply with one line that is exactly APPROVE, or REJECT:
+followed by the reasons.
 
 {spec}
 
@@ -224,8 +228,10 @@ class Factory:
         if not problems:
             diff = git(self.worktree, "diff", s["base"])[:20000] or "(no changes)"
             checker = self.make_agent(self.worktree, "checker", self.client)
-            verdict = checker.run_turn(CHECKER_PROMPT.format(spec=self.spec.as_text(),
-                                                             diff=diff)).strip()
+            checks = "\n".join(f"- {name}: {result}" for name, result in s["results"].items()
+                               if name.startswith(("verify", "scope", "security")))
+            verdict = checker.run_turn(CHECKER_PROMPT.format(
+                spec=self.spec.as_text(), diff=diff, checks=checks)).strip()
             s["results"]["checker"] = ("APPROVE" if checker_approves(verdict) else
                                        "REJECT: " + (verdict.splitlines() or ["-"])[0][:100])
             if checker_approves(verdict):

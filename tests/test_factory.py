@@ -189,3 +189,15 @@ def test_every_failure_writes_a_report_with_the_error(tmp_path):
     report = (repo2 / ".minicode" / "factory" / "r1-report.md").read_text()
     assert state["status"] == "failed" and "Error: preview setup failed" in report
     assert "| implement | attempt 1: Created it. |" in report         # one line per row
+
+
+def test_the_read_only_checker_is_told_which_checks_already_passed(tmp_path):
+    """Capstone: a read-only checker tried to re-run the checks, was denied, and rejected a
+    correct change twice. It now gets the results instead."""
+    repo = make_repo(tmp_path)
+    client = ScriptedClient([{"content": "Plan."}] + MAKE + [{"content": "APPROVE"}])
+    state = Factory(repo, SPEC, agents, client, run_id="r1", on_event=lambda _: None).run()
+    assert state["status"] == "done"
+    prompt = next(m["content"] for m in client.sent[-1]["messages"]
+                  if "You are the CHECKER" in str(m.get("content")))
+    assert "not run commands" in prompt and "- verify: " in prompt and ": pass" in prompt
