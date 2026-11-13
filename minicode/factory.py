@@ -36,6 +36,7 @@ import httpx
 
 from minicode.background import BudgetClient, BudgetExceeded, git
 from minicode.security import clean_env
+from minicode.verify import checker_approves
 
 STAGES = ["plan", "implement", "verify", "publish", "preview"]
 STATE_DIR = Path(".minicode") / "factory"
@@ -60,8 +61,8 @@ delete existing tests. Stay inside the spec's scope. Nobody can answer questions
 CHECKER_PROMPT = """You are the CHECKER in a software factory. You did not write this change.
 All verify commands passed. Decide whether the change implements the spec honestly:
 every acceptance criterion covered by code and a test, nothing out of scope, no weakened
-tests, no obvious bugs or security problems. Reply with APPROVE on the first line, or
-REJECT: followed by the reasons.
+tests, no obvious bugs or security problems. End your reply with one line that is
+exactly APPROVE, or REJECT: followed by the reasons.
 
 {spec}
 
@@ -202,8 +203,9 @@ class Factory:
             checker = self.make_agent(self.worktree, "checker", self.client)
             verdict = checker.run_turn(CHECKER_PROMPT.format(spec=self.spec.as_text(),
                                                              diff=diff)).strip()
-            s["results"]["checker"] = verdict.splitlines()[0][:120] if verdict else "-"
-            if verdict.upper().startswith("APPROVE"):
+            s["results"]["checker"] = ("APPROVE" if checker_approves(verdict) else
+                                       "REJECT: " + (verdict.splitlines() or ["-"])[0][:100])
+            if checker_approves(verdict):
                 s["feedback"] = ""
                 return "publish"
             problems.append("The checker rejected the change:\n" + verdict)

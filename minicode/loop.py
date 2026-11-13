@@ -29,6 +29,7 @@ from pathlib import Path
 
 from minicode.background import BudgetClient, BudgetExceeded, git
 from minicode.security import clean_env
+from minicode.verify import checker_approves
 
 STATE_DIR = Path(".minicode") / "loops"
 
@@ -46,7 +47,7 @@ The goal's check command passed. Decide whether the change is acceptable anyway:
 - Does it reach the goal honestly (no weakened tests, no special-casing, no hacks)?
 - Is it the smallest reasonable change, with nothing unrelated?
 - Could it break other behaviour?
-Reply with APPROVE on the first line, or REJECT: followed by the reasons.
+End your reply with one line that is exactly APPROVE, or REJECT: followed by the reasons.
 
 The diff:
 {diff}"""
@@ -155,7 +156,7 @@ class LoopRunner:
             verdict = checker.run_turn(CHECKER_PROMPT.format(goal=self.config.goal,
                                                              diff=diff)).strip()
             record["verdict"] = verdict[:600]
-            if verdict.upper().startswith("APPROVE"):
+            if checker_approves(verdict):
                 s["history"].append(record)
                 self.finish(path)
                 return True

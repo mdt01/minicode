@@ -11,6 +11,7 @@ Two checks run when the model gives its final answer:
     python -m minicode --workspace ../campushub --verify "python -m pytest -q"
 """
 import ast
+import re
 import subprocess
 from fnmatch import fnmatch
 from pathlib import Path
@@ -115,3 +116,19 @@ class VerificationGate:
                 return False, (f"Verification failed: `{self.command}` exited with "
                                f"{done.returncode}.\n{tail}\nFix the cause, then finish.")
         return True, ""
+
+
+DECISION = re.compile(r"^[\s*#>`_]*(APPROVE|REJECT)\b", re.IGNORECASE)
+
+
+def checker_approves(verdict: str) -> bool:
+    """Read a checker agent's decision: the LAST line that starts with APPROVE or REJECT
+    (markdown such as **APPROVE** allowed). No decision line means reject.
+
+    Lab 16: Haiku wrote its analysis first and "APPROVE" at the end in all three loops;
+    a first-line-only parser read every approval as a rejection and the loops burned their
+    budgets re-fixing changes the checker had accepted.
+    """
+    decisions = [m.group(1).upper() for line in verdict.splitlines()
+                 if (m := DECISION.match(line))]
+    return bool(decisions) and decisions[-1] == "APPROVE"

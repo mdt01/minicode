@@ -82,3 +82,24 @@ def test_goal_already_met_is_quiet_and_budget_escalates(tmp_path):
     endless = [tool_call(f"c{i}", "list_files", {}) for i in range(20)]
     _, state = run(other, endless, budget_tokens=500)
     assert state["status"] == "escalated" and "budget" in state["escalation"]
+
+
+def test_checker_decision_is_read_from_its_last_decision_line():
+    from minicode.verify import checker_approves
+    # Lab 16, Haiku: analysis first, decision last - this is an approval
+    assert checker_approves("I cannot run the tests, but the diff...\n\n**APPROVE**\n\nA fix.")
+    assert checker_approves("Analysis...\nAPPROVE")
+    assert checker_approves("APPROVE\nSmall and honest.")
+    assert not checker_approves("REJECT: the test still reads the real clock.")
+    assert not checker_approves("Looks fine at first.\nAPPROVE?\nNo:\nREJECT: special-cased.")
+    assert not checker_approves("Seems good to me.")                    # no decision line
+
+
+
+def test_an_approval_after_the_analysis_finishes_the_loop(tmp_path):
+    repo = make_repo(tmp_path)
+    _, state = run(repo, [
+        create("fixed.txt"), {"content": "Created fixed.txt."},           # maker
+        {"content": "I cannot run the tests, but the diff is small.\n\n"
+                    "**APPROVE**\n\nThe change is honest."}])               # checker
+    assert state["status"] == "done" and state["iteration"] == 1
