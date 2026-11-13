@@ -95,8 +95,9 @@ class Workspace:
             if self.sandbox:
                 done = self.sandbox.run(command, self.root)
             else:
-                done = subprocess.run(command, shell=True, cwd=self.root, capture_output=True,
-                                      text=True, timeout=60)
+                # imported here: minicode.security is loaded after this module
+                from minicode.security import run_command
+                done = run_command(command, cwd=self.root, timeout=60)
         except subprocess.TimeoutExpired:
             raise ToolError("Command timed out after 60 seconds.")
         output = (done.stdout + done.stderr).strip() or "(no output)"

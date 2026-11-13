@@ -59,3 +59,24 @@ def test_edits_keep_each_files_line_endings(ws):
     assert (ws.root / "lf.py").read_bytes() == b"a = 1\nb = 3\n"
     assert (ws.root / "crlf.py").read_bytes() == b"a = 1\r\nb = 3\r\n"
     assert (ws.root / "new.py").read_bytes() == b"x = 1\ny = 2\n"
+
+
+def test_commands_get_no_keyboard_and_a_real_timeout(tmp_path):
+    """A capstone run hung for an hour: a command waited for stdin, and on Windows the
+    60-second timeout killed only the shell while its child kept the pipes open."""
+    import subprocess
+    import sys
+    import time
+
+    import pytest
+
+    from minicode.security import run_command
+
+    reads = run_command(f'"{sys.executable}" -c "import sys; print(repr(sys.stdin.read()))"',
+                        cwd=tmp_path, timeout=20)
+    assert reads.stdout.strip() == "''"
+    child = f'"{sys.executable}" -c "import subprocess, sys; subprocess.run([sys.executable, \'-c\', \'import time; time.sleep(30)\'])"'
+    start = time.time()
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_command(child, cwd=tmp_path, timeout=1)
+    assert time.time() - start < 10

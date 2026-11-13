@@ -20,6 +20,7 @@ import fnmatch
 import json
 import os
 import re
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -98,6 +99,37 @@ def clean_env() -> dict[str, str]:
             if not SECRET_NAME.search(k) and not k.startswith("GIT_CONFIG_")}
 
 
+def run_command(argv: list[str] | str, cwd: Path, timeout: int = 60,
+                env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """Run an agent's command without a keyboard and with a real time limit.
+
+    stdin is empty, so a command that waits for input ends instead of hanging the agent
+    (a capstone run on Windows hung for an hour on a hook script that read stdin).
+    On timeout the whole process tree is killed: killing only the shell left its child
+    holding the output pipes, so the timeout never fired on Windows.
+    """
+    windows = os.name == "nt"
+    process = subprocess.Popen(
+        argv, shell=isinstance(argv, str), cwd=cwd, env=env, text=True, errors="replace",
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0,
+        start_new_session=not windows)
+    try:
+        out, err = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if windows:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                           capture_output=True, check=False)
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(argv, process.returncode, out, err)
+
+
 class Sandbox:
     """Runs shell commands: "none" (scrubbed environment) or "docker" (no network)."""
 
@@ -117,8 +149,7 @@ class Sandbox:
 
     def run(self, command: str, root: Path, timeout: int = 60) -> subprocess.CompletedProcess:
         argv = self.argv(command, root)
-        return subprocess.run(argv, shell=isinstance(argv, str), cwd=root, text=True,
-                              capture_output=True, timeout=timeout, env=clean_env())
+        return run_command(argv, cwd=root, timeout=timeout, env=clean_env())
 
     def describe(self) -> str:
         if self.kind == "none":
