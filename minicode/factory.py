@@ -28,6 +28,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -83,6 +84,7 @@ class Spec:
     health: str = "/health"
     env: dict = field(default_factory=dict)
     setup: list[str] = field(default_factory=list)  # e.g. seed the preview database
+    allowed_paths: list[str] = field(default_factory=list)  # e.g. ["app/services/", "tests/"]
     smoke: list[dict] = field(default_factory=list)
 
     @classmethod
@@ -154,10 +156,13 @@ class Factory:
                 s["stage"] = next_stage
                 self.save()                               # checkpoint after every stage
                 if s["status"] in ("awaiting-approval", "failed"):
-                    return s
-            s["status"] = "done"
+                    break
+            else:
+                s["status"] = "done"
         except BudgetExceeded as exc:
             s["status"], s["error"] = "failed", str(exc)
+        if s["status"] == "failed":                       # every failure is reported the same way
+            self.event(f"stopped at stage {s['stage']}, a human takes over: {s['error']}")
         self.write_report()
         self.save()
         return s
@@ -191,13 +196,31 @@ class Factory:
             s["results"][f"verify: {command}"] = "pass" if ok else "FAIL"
             if not ok:
                 problems.append(f"`{command}` failed:\n{out}")
-        changed = [f for f in git(self.worktree, "diff", "--name-only", s["base"]).split()
-                   if f.endswith(".py") and not f.startswith("tests/")]
+        git(self.worktree, "add", "--intent-to-add", "--all")  # new files count as changes
+        touched = git(self.worktree, "diff", "--name-only", s["base"]).split()
+        if self.spec.allowed_paths:                       # scope as a check, not just prose
+            outside = [f for f in touched
+                       if not any(f.startswith(p) for p in self.spec.allowed_paths)]
+            s["results"]["scope check"] = ("pass" if not outside else
+                                           "FAIL: " + ", ".join(outside)[:200])
+            if outside:
+                problems.append("These files are outside the spec's allowed paths ("
+                                + ", ".join(self.spec.allowed_paths) + "); undo the "
+                                "changes to them:\n" + "\n".join(outside))
+        changed = [f for f in touched if f.endswith(".py") and not f.startswith("tests/")
+                   and (self.worktree / f).is_file()]    # a deleted file cannot be scanned
         if changed:                                       # scan only what changed
-            ok, out = self.shell(f"{self.python} -m bandit -q " + " ".join(changed))
-            s["results"]["security scan (changed files)"] = "pass" if ok else "FAIL"
-            if not ok:
-                problems.append(f"Security scan of changed files:\n{out}")
+            new, old = self.new_findings(changed)
+            if new is None:
+                s["results"]["security scan (changed files)"] = "FAIL: the scanner did not run"
+                problems.append(f"The security scanner did not run:\n{old}")
+            elif new:
+                s["results"]["security scan (changed files)"] = f"FAIL: {len(new)} new issue(s)"
+                problems.append("The change adds security issues:\n" + "\n".join(new))
+            else:
+                s["results"]["security scan (changed files)"] = (
+                    f"pass ({old} existing issue(s) in these files left alone)" if old
+                    else "pass")
         if not problems:
             diff = git(self.worktree, "diff", s["base"])[:20000] or "(no changes)"
             checker = self.make_agent(self.worktree, "checker", self.client)
@@ -212,8 +235,6 @@ class Factory:
         s["feedback"] = "\n\n".join(problems)
         if s["attempt"] >= self.max_attempts:
             s["status"], s["error"] = "failed", f"verification failed {s['attempt']} times"
-            self.event("escalated to a human: " + s["error"])
-            self.write_report()
             return "verify"
         return "implement"
 
@@ -271,6 +292,51 @@ class Factory:
         return "end"
 
     # ---- helpers -------------------------------------------------------------------
+    def scan(self, root: Path, files: list[str]) -> list[tuple] | str:
+        """Bandit findings as (file, test id, source line), or the error text if it failed."""
+        done = subprocess.run([self.python, "-m", "bandit", "-q", "-f", "json", *files],
+                              cwd=root, capture_output=True, text=True, timeout=300, check=False,
+                              env=clean_env())
+        try:
+            results = json.loads(done.stdout)["results"]
+        except (ValueError, KeyError):
+            return (done.stdout + done.stderr).strip()[-2000:] or "no output"
+        found = []
+        for r in results:
+            name = r["filename"].replace("\\", "/").removeprefix("./")
+            lines = (root / name).read_text(encoding="utf-8").splitlines()
+            line = lines[r["line_number"] - 1].strip() if r["line_number"] <= len(lines) else ""
+            found.append((name, r["test_id"], line, r["line_number"], r["issue_text"]))
+        return found
+
+    def new_findings(self, files: list[str]) -> tuple[list[str] | None, int | str]:
+        """Findings the change adds: the same scan of the base versions is subtracted, so an
+        old issue in a file the spec touches does not block it (it is out of scope)."""
+        after = self.scan(self.worktree, files)
+        if isinstance(after, str):
+            return None, after
+        before_dir = Path(tempfile.mkdtemp(prefix="factory-base-"))
+        existed = []
+        for name in files:
+            try:
+                text = git(self.worktree, "show", f"{self.state['base']}:{name}")
+            except RuntimeError:                          # a new file: nothing to subtract
+                continue
+            (before_dir / name).parent.mkdir(parents=True, exist_ok=True)
+            (before_dir / name).write_text(text + "\n", encoding="utf-8")
+            existed.append(name)
+        before = self.scan(before_dir, existed) if existed else []
+        if isinstance(before, str):
+            return None, before
+        old = Counter(f[:3] for f in before)
+        new = []
+        for f in after:
+            if old[f[:3]]:
+                old[f[:3]] -= 1
+            else:
+                new.append(f"{f[0]}:{f[3]} {f[1]} {f[4]}: {f[2]}")
+        return new, len(after) - len(new)
+
     def shell(self, command: str) -> tuple[bool, str]:
         done = subprocess.run(command, shell=True, cwd=self.worktree, text=True,
                               capture_output=True, timeout=900, env=clean_env())
@@ -278,10 +344,13 @@ class Factory:
                                                .strip().splitlines()[-25:])
 
     def report_text(self) -> str:
-        rows = "\n".join(f"| {k} | {v} |" for k, v in self.state["results"].items())
+        def cell(value) -> str:                           # one line, so the table holds
+            return " ".join(str(value).replace("|", "/").split())[:300]
+        rows = "\n".join(f"| {k} | {cell(v)} |" for k, v in self.state["results"].items())
+        error = f"Error: {self.state['error']}\n\n" if self.state.get("error") else ""
         return (f"# Factory run {self.run_id}\n\nSpec: {self.spec.title}\n\n"
                 f"Status: {self.state['status']}  |  attempts: {self.state['attempt']}  |  "
-                f"tokens: {self.client.used:,}\n\n| Stage | Result |\n|---|---|\n{rows}\n\n"
+                f"tokens: {self.client.used:,}\n\n{error}| Stage | Result |\n|---|---|\n{rows}\n\n"
                 "AI-generated by a software factory: a human reviews before merging.\n")
 
     def write_report(self) -> None:
