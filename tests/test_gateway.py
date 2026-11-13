@@ -67,7 +67,8 @@ def test_keys_budgets_and_cache(tmp_path):
     assert len(calls) == 1                                          # second was cached
     gw.spent[(__import__("time").strftime("%Y-%m-%d"), "team-a")] = 1.0
     status, data = ask(gw)
-    assert status == 429 and "budget" in data["error"]["message"]
+    assert status == 402 and data["error"]["type"] == "budget_exceeded"     # not retried
+    assert "$1 for 'team-a'" in data["error"]["message"]
 
 
 def test_openai_client_through_the_gateway_and_report(tmp_path):
@@ -86,3 +87,15 @@ def test_openai_client_through_the_gateway_and_report(tmp_path):
     rows = summarise(entries, "feature")
     assert rows[0]["name"] == "registrations" and rows[0]["cost"] == 0.0045
     assert "| registrations | 1 | 1,100 | 0.0045 | 100% |" in markdown(entries, ["feature"])
+
+
+def test_budgets_survive_a_restart(tmp_path):
+    """Lab 17: budgets lived only in memory, so restarting the gateway reset them."""
+    transport, _ = upstream()
+    config = {**CONFIG, "budgets": {"team-a": 0.0005}}
+    log = tmp_path / "log.jsonl"
+    assert ask(Gateway(config, log, transport))[0] == 200            # costs $0.00028
+    assert ask(Gateway(config, log, transport))[0] == 200            # restart: $0.00056
+    status, data = ask(Gateway(config, log, transport))              # restart again
+    assert status == 402 and "spent $0.000560" in data["error"]["message"]
+

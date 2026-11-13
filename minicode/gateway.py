@@ -10,6 +10,9 @@ What it does for every POST /v1/chat/completions:
   2. Pick a route: X-Task header (chat, review, loop, ...) -> list of model aliases.
      The first alias is the primary; the others are fallbacks.
   3. Enforce daily budgets per team, and per feature ("feature:<name>") if configured.
+     An exhausted budget is answered with 402 (not 429: clients retry a 429 as a rate
+     limit). Today's spending is rebuilt from the log at start-up, so a restart does not
+     reset the budgets.
   4. Serve identical requests from a small cache, if the route allows it.
   5. Call the upstream; on 429, 5xx or a network error, try the next alias.
   6. Log one JSON line: team, feature, task, model, tokens, cost, latency, fallbacks.
@@ -46,6 +49,23 @@ class Gateway:
         self.cache: OrderedDict[str, dict] = OrderedDict()
         self.spent: dict[tuple[str, str], float] = {}        # (day, team|feature) -> $
         self.lock = threading.Lock()
+        self.restore_spending()
+
+    def restore_spending(self) -> None:
+        """Today's costs from the log: budgets survive a restart of the gateway."""
+        if not self.log_file.is_file():
+            return
+        today = time.strftime("%Y-%m-%d")
+        for line in self.log_file.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("status") != 200 or not str(entry.get("time", "")).startswith(today):
+                continue
+            for scope in (entry.get("team"), f"feature:{entry.get('feature')}"):
+                key = (today, scope)
+                self.spent[key] = self.spent.get(key, 0.0) + float(entry.get("cost", 0.0))
 
     # ---- the request path -----------------------------------------------------------
     def handle(self, headers: dict, body: dict) -> tuple[int, dict]:
@@ -60,8 +80,9 @@ class Gateway:
         for scope in scopes:
             limit = self.budgets.get(scope)
             if limit is not None and self.today(scope) >= limit:
-                self.log(team, feature, task, "-", 0, 0, 0.0, 0, 429, [], False)
-                return 429, error(f"daily budget of ${limit:.2f} for '{scope}' is used up")
+                self.log(team, feature, task, "-", 0, 0, 0.0, 0, 402, [], False)
+                return 402, error(f"daily budget of ${limit:g} for '{scope}' is used up "
+                                  f"(spent ${self.today(scope):.6f} today)", "budget_exceeded")
         route = self.route(body.get("model", "auto"), task)
         key = self.cache_key(body) if task in self.cache_tasks else None
         if key and key in self.cache:
@@ -124,8 +145,8 @@ class Gateway:
             f.write(json.dumps(entry) + "\n")
 
 
-def error(message: str) -> dict:
-    return {"error": {"message": message, "type": "gateway_error"}}
+def error(message: str, kind: str = "gateway_error") -> dict:
+    return {"error": {"message": message, "type": kind}}
 
 
 def make_handler(gateway: Gateway):
